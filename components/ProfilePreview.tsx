@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type ProfilePreviewProps = {
   initialName: string;
@@ -12,43 +12,42 @@ type ProfilePreviewProps = {
 };
 
 function getInitials(name: string): string {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part.charAt(0).toUpperCase())
-      .join("") || "RN"
-  );
+  const words = name.trim().split(/\s+/).filter(Boolean);
+
+  if (words.length === 0) return "RN";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+
+  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
 }
 
 function getAvatarDisplayUrl(value: string): string {
-  if (!value) return "";
+  const url = value.trim();
+
+  if (!url) return "";
 
   try {
-    const url = new URL(value);
+    const parsed = new URL(url);
 
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
       return "";
     }
 
     if (
-      url.hostname === "drive.google.com" ||
-      url.hostname === "www.drive.google.com"
+      parsed.hostname === "drive.google.com" ||
+      parsed.hostname === "www.drive.google.com"
     ) {
       const fileId =
-        url.pathname.match(/\/file\/d\/([^/]+)/)?.[1] ??
-        url.searchParams.get("id");
+        parsed.pathname.match(/\/file\/d\/([^/]+)/)?.[1] ??
+        parsed.searchParams.get("id");
 
-      return fileId
-        ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(
-            fileId
-          )}&sz=w800`
-        : "";
+      if (fileId) {
+        return `https://drive.google.com/thumbnail?id=${encodeURIComponent(
+          fileId
+        )}&sz=w300`;
+      }
     }
 
-    return url.toString();
+    return url;
   } catch {
     return "";
   }
@@ -62,7 +61,7 @@ function getLanguageName(locale: string): string {
     ig: "Igbo",
   };
 
-  return languages[locale] || locale;
+  return languages[locale] ?? locale;
 }
 
 export default function ProfilePreview({
@@ -76,6 +75,59 @@ export default function ProfilePreview({
   const [bio, setBio] = useState(initialBio);
   const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl);
   const [locale, setLocale] = useState(initialLocale);
+  const [isVisible, setIsVisible] = useState(showInDirectory);
+
+  useEffect(() => {
+    const nameInput = document.getElementById(
+      "full_name"
+    ) as HTMLInputElement | null;
+
+    const bioInput = document.getElementById(
+      "bio"
+    ) as HTMLTextAreaElement | null;
+
+    const avatarInput = document.getElementById(
+      "avatar_url"
+    ) as HTMLInputElement | null;
+
+    const localeInput = document.getElementById(
+      "locale"
+    ) as HTMLSelectElement | HTMLInputElement | null;
+
+    const visibilityInput = document.getElementById(
+      "show_in_directory"
+    ) as HTMLSelectElement | HTMLInputElement | null;
+
+    const updateName = () => setName(nameInput?.value ?? "");
+    const updateBio = () => setBio(bioInput?.value ?? "");
+    const updateAvatar = () => setAvatarUrl(avatarInput?.value ?? "");
+    const updateLocale = () => setLocale(localeInput?.value ?? "");
+
+    const updateVisibility = () => {
+      setIsVisible(visibilityInput?.value !== "false");
+    };
+
+    nameInput?.addEventListener("input", updateName);
+    bioInput?.addEventListener("input", updateBio);
+    avatarInput?.addEventListener("input", updateAvatar);
+    localeInput?.addEventListener("change", updateLocale);
+    visibilityInput?.addEventListener("change", updateVisibility);
+
+    // Synchronize initial values with the existing form.
+    updateName();
+    updateBio();
+    updateAvatar();
+    updateLocale();
+    updateVisibility();
+
+    return () => {
+      nameInput?.removeEventListener("input", updateName);
+      bioInput?.removeEventListener("input", updateBio);
+      avatarInput?.removeEventListener("input", updateAvatar);
+      localeInput?.removeEventListener("change", updateLocale);
+      visibilityInput?.removeEventListener("change", updateVisibility);
+    };
+  }, []);
 
   const displayName = name.trim() || "RuffNeck member";
   const imageUrl = getAvatarDisplayUrl(avatarUrl);
@@ -86,68 +138,17 @@ export default function ProfilePreview({
         <p className="eyebrow">LIVE MEMBER VIEW</p>
         <h2>Profile preview</h2>
         <p>
-          Changes to the fields below update this preview immediately.
-          Your profile is not saved until you submit the main profile form.
+          This preview updates as you edit your profile. Changes are not saved
+          until you submit the profile form.
         </p>
       </div>
 
-      <div
-        className="profile-form"
-        style={{ marginBottom: 24 }}
-      >
-        <div className="form-field">
-          <label htmlFor="preview_name">Preview name</label>
-          <input
-            id="preview_name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={100}
-          />
-        </div>
-
-        <div className="form-field">
-          <label htmlFor="preview_bio">Preview biography</label>
-          <textarea
-            id="preview_bio"
-            value={bio}
-            onChange={(event) => setBio(event.target.value)}
-            maxLength={600}
-            rows={3}
-          />
-        </div>
-
-        <div className="form-field">
-          <label htmlFor="preview_avatar">Preview photo URL</label>
-          <input
-            id="preview_avatar"
-            value={avatarUrl}
-            onChange={(event) => setAvatarUrl(event.target.value)}
-            maxLength={1000}
-          />
-        </div>
-
-        <div className="form-field">
-          <label htmlFor="preview_locale">Preview language</label>
-          <select
-            id="preview_locale"
-            value={locale}
-            onChange={(event) => setLocale(event.target.value)}
-          >
-            <option value="">Not specified</option>
-            <option value="en">English</option>
-            <option value="ha">Hausa</option>
-            <option value="yo">Yoruba</option>
-            <option value="ig">Igbo</option>
-          </select>
-        </div>
-      </div>
-
-      {!showInDirectory ? (
+      {!isVisible ? (
         <div className="alert" role="status">
-          <strong>Your profile is hidden from the directory.</strong>
+          <strong>Your profile is hidden from the member directory.</strong>
           <p>
-            Other members should not be able to find your profile through
-            the member directory while this setting is disabled.
+            Enable directory visibility in the profile form to preview how
+            other members can see your profile.
           </p>
         </div>
       ) : (
@@ -178,9 +179,7 @@ export default function ProfilePreview({
           <div className="profile-identity-copy">
             <h3>{displayName}</h3>
 
-            {locale && (
-              <p className="muted">{getLanguageName(locale)}</p>
-            )}
+            {locale && <p className="muted">{getLanguageName(locale)}</p>}
 
             <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
               {bio.trim() || "You have not added a biography yet."}
@@ -190,8 +189,7 @@ export default function ProfilePreview({
       )}
 
       <p className="form-help" style={{ marginTop: 14 }}>
-        This is a local preview. It does not save changes or verify whether
-        an image URL is accessible.
+        Preview only. Submit the profile form to save your changes.
       </p>
     </section>
   );

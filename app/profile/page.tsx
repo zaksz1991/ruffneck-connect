@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import ProfilePreview from "@/components/ProfilePreview";
 
 export const dynamic = "force-dynamic";
 
