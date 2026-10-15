@@ -6,43 +6,48 @@ export async function middleware(request: NextRequest) {
     request,
   });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-        setAll(
-          cookiesToSet: {
-            name: string;
-            value: string;
-            options?: Record<string, unknown>;
-          }[]
-        ) {
-          cookiesToSet.forEach(({ name, value }) => {
-            request.cookies.set(name, value);
-          });
+  if (!supabaseUrl || !supabaseKey) {
+    console.error(
+      "Supabase middleware configuration is missing required environment variables."
+    );
 
-          response = NextResponse.next({
-            request,
-          });
+    return NextResponse.json(
+      { error: "Authentication service is not configured." },
+      { status: 500 }
+    );
+  }
 
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(
-              name,
-              value,
-              options as Parameters<typeof response.cookies.set>[2]
-            );
-          });
-        },
+  const supabase = createServerClient(supabaseUrl, supabaseKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
       },
-    }
-  );
 
-  // Refresh the authentication session when necessary.
+      setAll(
+        cookiesToSet: {
+          name: string;
+          value: string;
+          options?: Parameters<typeof response.cookies.set>[2];
+        }[]
+      ) {
+        cookiesToSet.forEach(({ name, value }) => {
+          request.cookies.set(name, value);
+        });
+
+        response = NextResponse.next({
+          request,
+        });
+
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
+
   await supabase.auth.getUser();
 
   return response;
