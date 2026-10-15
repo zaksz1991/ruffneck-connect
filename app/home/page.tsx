@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import NotificationBell from "@/components/NotificationBell";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +69,9 @@ export default async function HomePage() {
   if (communityIds.length > 0) {
     const { data } = await supabase
       .from("communities")
-      .select("id, name, slug, description, category, location_label")
+      .select(
+        "id, name, slug, description, category, location_label"
+      )
       .in("id", communityIds)
       .eq("status", "active")
       .order("created_at", { ascending: false })
@@ -98,40 +99,24 @@ export default async function HomePage() {
 
   return (
     <>
-      <header className="site-header">
-        <div className="container site-header-inner">
-          <Link href="/home" className="brand">
-            <span className="brand-mark">RN</span>
-            <span>RuffNeck Connect</span>
-          </Link>
-
-          <nav className="site-nav" aria-label="Main navigation">
-            <Link href="/home">Home</Link>
-            <Link href="/communities">Communities</Link>
-            <Link href="/intents">Discover</Link>
-            <Link href="/messages">Messages</Link>
-            <NotificationBell />
-
-            <form action="/auth/signout" method="post">
-              <button type="submit" className="button-secondary">
-                Sign out
-              </button>
-            </form>
-          </nav>
-        </div>
-      </header>
-
       <main className="container page-section">
+        {/* Welcome */}
         <section className="page-heading">
           <p className="eyebrow">YOUR CONNECT SPACE</p>
+
           <h1>Welcome, {displayName}.</h1>
+
           <p>
-            Discover people, share what you need, contribute what you can, and
-            turn useful connections into action.
+            Discover people, share what you need, contribute what
+            you can, and turn useful connections into action.
           </p>
         </section>
 
-        <section className="grid grid-3" style={{ marginBottom: 36 }}>
+        {/* Dashboard statistics */}
+        <section
+          className="grid grid-3"
+          style={{ marginBottom: 36 }}
+        >
           <article className="stat-card">
             <strong>{activeMemberships.length}</strong>
             <span>Active communities</span>
@@ -144,10 +129,13 @@ export default async function HomePage() {
 
           <article className="stat-card">
             <strong>3</strong>
-            <span>Ways to participate: Need, Offer, Build</span>
+            <span>
+              Ways to participate: Need, Offer, Build
+            </span>
           </article>
         </section>
 
+        {/* Need, Offer, Build */}
         <section style={{ marginBottom: 44 }}>
           <div className="page-heading">
             <p className="eyebrow">TAKE THE NEXT STEP</p>
@@ -157,53 +145,80 @@ export default async function HomePage() {
           <div className="grid grid-3">
             <article className="feature-card">
               <div className="feature-icon">N</div>
+
               <h3>I need something</h3>
+
               <p>
-                Explain a challenge, resource gap, or problem you want help
-                solving.
+                Explain a challenge, resource gap, or problem you
+                want help solving.
               </p>
-              <Link href="/intents/new?type=need" className="text-link">
+
+              <Link
+                href="/intents/new?type=need"
+                className="text-link"
+              >
                 Post a need →
               </Link>
             </article>
 
             <article className="feature-card">
               <div className="feature-icon">O</div>
+
               <h3>I can offer something</h3>
+
               <p>
-                Share your skills, experience, resources, or time with people
-                who can use them.
+                Share your skills, experience, resources, or time
+                with people who can use them.
               </p>
-              <Link href="/intents/new?type=offer" className="text-link">
+
+              <Link
+                href="/intents/new?type=offer"
+                className="text-link"
+              >
                 Share an offer →
               </Link>
             </article>
 
             <article className="feature-card">
               <div className="feature-icon">B</div>
+
               <h3>I want to build something</h3>
+
               <p>
-                Find collaborators around a project, idea, or shared
-                opportunity.
+                Find collaborators around a project, idea, or
+                shared opportunity.
               </p>
-              <Link href="/intents/new?type=build" className="text-link">
+
+              <Link
+                href="/intents/new?type=build"
+                className="text-link"
+              >
                 Start building →
               </Link>
             </article>
           </div>
         </section>
 
+        {/* My communities */}
         <section style={{ marginBottom: 44 }}>
           <div
             className="row"
-            style={{ justifyContent: "space-between", marginBottom: 18 }}
+            style={{
+              justifyContent: "space-between",
+              marginBottom: 18,
+            }}
           >
             <div>
               <p className="eyebrow">YOUR NETWORK</p>
-              <h2 style={{ marginBottom: 0 }}>My communities</h2>
+              <h2 style={{ marginBottom: 0 }}>
+                My communities
+              </h2>
             </div>
 
-            <Link href="/communities" className="text-link">
+            <Link
+              href="/communities"
+              className="text-link"
+            >
               Explore communities →
             </Link>
           </div>
@@ -211,18 +226,26 @@ export default async function HomePage() {
           {myCommunities.length === 0 ? (
             <div className="empty-state">
               <h3>Your community journey starts here.</h3>
+
               <p>
-                Join a community to connect with people who share your
-                interests or goals.
+                Join a community to connect with people who share
+                your interests or goals.
               </p>
-              <Link href="/communities" className="button">
+
+              <Link
+                href="/communities"
+                className="button"
+              >
                 Discover communities
               </Link>
             </div>
           ) : (
             <div className="grid grid-2">
               {myCommunities.map((community) => (
-                <article className="card" key={community.id}>
+                <article
+                  className="card"
+                  key={community.id}
+                >
                   <p className="eyebrow">
                     {community.category || "Community"}
                   </p>
@@ -235,7 +258,9 @@ export default async function HomePage() {
                   </p>
 
                   {community.location_label && (
-                    <p className="muted">{community.location_label}</p>
+                    <p className="muted">
+                      {community.location_label}
+                    </p>
                   )}
 
                   <Link
@@ -250,14 +275,23 @@ export default async function HomePage() {
           )}
         </section>
 
+        {/* Recent open intentions */}
         <section>
           <div
             className="row"
-            style={{ justifyContent: "space-between", marginBottom: 18 }}
+            style={{
+              justifyContent: "space-between",
+              marginBottom: 18,
+            }}
           >
             <div>
-              <p className="eyebrow">DISCOVER WHAT IS HAPPENING</p>
-              <h2 style={{ marginBottom: 0 }}>Recent open intentions</h2>
+              <p className="eyebrow">
+                DISCOVER WHAT IS HAPPENING
+              </p>
+
+              <h2 style={{ marginBottom: 0 }}>
+                Recent open intentions
+              </h2>
             </div>
 
             <Link href="/intents" className="text-link">
@@ -268,17 +302,26 @@ export default async function HomePage() {
           {intents.length === 0 ? (
             <div className="empty-state">
               <h3>No open intentions to display yet.</h3>
+
               <p>
-                Create the first useful opportunity in one of your communities.
+                Create the first useful opportunity in one of
+                your communities.
               </p>
-              <Link href="/intents/new" className="button">
+
+              <Link
+                href="/intents/new"
+                className="button"
+              >
                 Create an intention
               </Link>
             </div>
           ) : (
             <div className="grid grid-2">
               {intents.map((intent) => (
-                <article className="card" key={intent.id}>
+                <article
+                  className="card"
+                  key={intent.id}
+                >
                   <div
                     className="row"
                     style={{
@@ -299,7 +342,10 @@ export default async function HomePage() {
                     </span>
 
                     {intent.category && (
-                      <span className="muted" style={{ fontSize: 12 }}>
+                      <span
+                        className="muted"
+                        style={{ fontSize: 12 }}
+                      >
                         {intent.category}
                       </span>
                     )}
@@ -314,12 +360,18 @@ export default async function HomePage() {
                   </p>
 
                   {intent.location_label && (
-                    <p className="muted" style={{ fontSize: 13 }}>
+                    <p
+                      className="muted"
+                      style={{ fontSize: 13 }}
+                    >
                       {intent.location_label}
                     </p>
                   )}
 
-                  <Link href={`/intents/${intent.id}`} className="text-link">
+                  <Link
+                    href={`/intents/${intent.id}`}
+                    className="text-link"
+                  >
                     View details →
                   </Link>
                 </article>
@@ -329,12 +381,15 @@ export default async function HomePage() {
         </section>
       </main>
 
+      {/* Footer */}
       <footer className="site-footer">
         <div
           className="container row"
           style={{ justifyContent: "space-between" }}
         >
-          <span>© {new Date().getFullYear()} RuffNeck Connect</span>
+          <span>
+            © {new Date().getFullYear()} RuffNeck Connect
+          </span>
 
           <Link href="/" className="text-link">
             About RuffNeck Connect

@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from "next";
+import GlobalHeader from "@/components/GlobalHeader";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://ruffneck-connect.vercel.app"),
+  metadataBase: new URL(
+    "https://ruffneck-connect.vercel.app"
+  ),
 
   title: {
     default: "RuffNeck Connect",
@@ -26,6 +29,7 @@ export const metadata: Metadata = {
         sizes: "512x512",
       },
     ],
+
     apple: [
       {
         url: "/apple-touch-icon.png",
@@ -39,9 +43,11 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://ruffneck-connect.vercel.app",
     siteName: "RuffNeck Connect",
-    title: "RuffNeck Connect — Community. Collaboration. Action.",
+    title:
+      "RuffNeck Connect — Community. Collaboration. Action.",
     description:
       "Find your community, connect with people, share opportunities, and build meaningful relationships.",
+
     images: [
       {
         url: "/og-image.png",
@@ -74,7 +80,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <GlobalHeader />
+        {children}
+      </body>
     </html>
   );
 }
