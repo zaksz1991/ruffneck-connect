@@ -64,7 +64,7 @@ function getAvatarDisplayUrl(value: string | null): string {
 
       return `https://drive.google.com/thumbnail?id=${encodeURIComponent(
         fileId
-      )}&sz=s1000`;
+      )}&sz=w800`;
     }
 
     return url.toString();
@@ -89,8 +89,8 @@ const errorMessages: Record<string, string> = {
   bio: "Your introduction must not exceed 600 characters.",
   phone: "Your phone number must not exceed 30 characters.",
   locale: "Your preferred language must not exceed 80 characters.",
-  avatar: "Enter a valid photo URL beginning with https:// or http://.",
-  save: "Your profile could not be saved. Please check your connection and try again.",
+  avatar: "Enter a valid photo URL beginning with http:// or https://.",
+  save: "Your profile could not be saved. Check your connection and try again.",
 };
 
 export default async function ProfilePage({
@@ -155,7 +155,6 @@ export default async function ProfilePage({
   const fullName =
     profile?.full_name?.trim() || authName;
 
-  // Convert Google Drive sharing URLs for image display.
   const avatarUrl = getAvatarDisplayUrl(
     profile?.avatar_url ?? null
   );
@@ -229,7 +228,9 @@ export default async function ProfilePage({
       error: updateError,
     } = await supabase
       .from("profiles")
-      .update(changes)
+      .update({
+        ...changes,
+      })
       .eq("id", user.id)
       .select("id")
       .maybeSingle();
@@ -243,7 +244,7 @@ export default async function ProfilePage({
       redirect("/profile?error=save");
     }
 
-    // Create a profile if the user does not already have one.
+    // Insert a profile if the user does not have one yet.
     if (!updatedProfile) {
       const { error: insertError } = await supabase
         .from("profiles")
@@ -288,7 +289,6 @@ export default async function ProfilePage({
   return (
     <main className="profile-page">
       <div className="container profile-container">
-        {/* Profile heading */}
         <div className="profile-page-heading">
           <p className="eyebrow">YOUR IDENTITY</p>
 
@@ -300,7 +300,6 @@ export default async function ProfilePage({
           </p>
         </div>
 
-        {/* Feedback */}
         {params.saved === "1" && (
           <div className="alert alert-success" role="status">
             Your profile has been saved successfully.
@@ -314,7 +313,6 @@ export default async function ProfilePage({
           </div>
         )}
 
-        {/* Profile overview */}
         <section className="profile-overview">
           <div className="profile-identity">
             {avatarUrl ? (
@@ -371,7 +369,6 @@ export default async function ProfilePage({
           </div>
         </section>
 
-        {/* Profile statistics */}
         <section className="profile-stats">
           <article className="profile-stat">
             <span>Active communities</span>
@@ -394,7 +391,6 @@ export default async function ProfilePage({
           </article>
         </section>
 
-        {/* Edit profile */}
         <section className="profile-editor">
           <div className="profile-editor-heading">
             <p className="eyebrow">PERSONAL DETAILS</p>
@@ -495,9 +491,8 @@ export default async function ProfilePage({
               />
 
               <span className="form-help">
-                Google Drive sharing links are supported when the
-                image is publicly accessible. Set sharing to
-                Anyone with the link — Viewer.
+                Google Drive sharing links can be converted for display.
+                The image must be shared with Anyone with the link — Viewer.
               </span>
             </div>
 
@@ -516,7 +511,6 @@ export default async function ProfilePage({
           </form>
         </section>
 
-        {/* Navigation shortcuts */}
         <section className="profile-shortcuts">
           <h2>Keep building connections</h2>
 
