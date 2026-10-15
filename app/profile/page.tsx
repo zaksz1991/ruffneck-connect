@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import { redirect, revalidatePath } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -32,20 +31,14 @@ function isValidUrl(value: string): boolean {
 
   try {
     const url = new URL(value);
-
-    return (
-      url.protocol === "https:" ||
-      url.protocol === "http:"
-    );
+    return url.protocol === "https:" || url.protocol === "http:";
   } catch {
     return false;
   }
 }
 
 function getAvatarDisplayUrl(value: string | null): string {
-  if (!value || !isValidUrl(value)) {
-    return "";
-  }
+  if (!value || !isValidUrl(value)) return "";
 
   try {
     const url = new URL(value);
@@ -58,9 +51,7 @@ function getAvatarDisplayUrl(value: string | null): string {
         url.pathname.match(/\/file\/d\/([^/]+)/)?.[1] ??
         url.searchParams.get("id");
 
-      if (!fileId) {
-        return "";
-      }
+      if (!fileId) return "";
 
       return `https://drive.google.com/thumbnail?id=${encodeURIComponent(
         fileId
@@ -74,10 +65,11 @@ function getAvatarDisplayUrl(value: string | null): string {
 }
 
 function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-
   return (
-    parts
+    name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
       .slice(0, 2)
       .map((part) => part.charAt(0).toUpperCase())
       .join("") || "RN"
@@ -89,8 +81,8 @@ const errorMessages: Record<string, string> = {
   bio: "Your introduction must not exceed 600 characters.",
   phone: "Your phone number must not exceed 30 characters.",
   locale: "Your preferred language must not exceed 80 characters.",
-  avatar: "Enter a valid photo URL beginning with http:// or https://.",
-  save: "Your profile could not be saved. Check your connection and try again.",
+  avatar: "Enter a valid photo URL beginning with HTTP or HTTPS.",
+  save: "Your profile could not be saved. Please try again.",
 };
 
 export default async function ProfilePage({
@@ -107,42 +99,28 @@ export default async function ProfilePage({
     redirect("/login?next=/profile");
   }
 
-  const [
-    profileResult,
-    membershipsResult,
-    intentionsResult,
-  ] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select(
-        "full_name, bio, avatar_url, phone, locale, role"
-      )
-      .eq("id", user.id)
-      .maybeSingle(),
+  const [profileResult, membershipsResult, intentionsResult] =
+    await Promise.all([
+      supabase
+        .from("profiles")
+        .select("full_name, bio, avatar_url, phone, locale, role")
+        .eq("id", user.id)
+        .maybeSingle(),
 
-    supabase
-      .from("community_members")
-      .select("community_id", {
-        count: "exact",
-        head: true,
-      })
-      .eq("user_id", user.id)
-      .eq("status", "active"),
+      supabase
+        .from("community_members")
+        .select("community_id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "active"),
 
-    supabase
-      .from("intents")
-      .select("id", {
-        count: "exact",
-        head: true,
-      })
-      .eq("author_id", user.id),
-  ]);
+      supabase
+        .from("intents")
+        .select("id", { count: "exact", head: true })
+        .eq("author_id", user.id),
+    ]);
 
   if (profileResult.error) {
-    console.error(
-      "Failed to load profile:",
-      profileResult.error.message
-    );
+    console.error("Profile load failed:", profileResult.error.message);
   }
 
   const profile = (profileResult.data ?? null) as Profile | null;
@@ -152,12 +130,8 @@ export default async function ProfilePage({
       ? user.user_metadata.full_name
       : "";
 
-  const fullName =
-    profile?.full_name?.trim() || authName;
-
-  const avatarUrl = getAvatarDisplayUrl(
-    profile?.avatar_url ?? null
-  );
+  const fullName = profile?.full_name?.trim() || authName;
+  const avatarUrl = getAvatarDisplayUrl(profile?.avatar_url ?? null);
 
   const completionItems = [
     Boolean(fullName),
@@ -168,9 +142,7 @@ export default async function ProfilePage({
   ];
 
   const completion = Math.round(
-    (completionItems.filter(Boolean).length /
-      completionItems.length) *
-      100
+    (completionItems.filter(Boolean).length / completionItems.length) * 100
   );
 
   async function saveProfile(formData: FormData) {
@@ -182,9 +154,7 @@ export default async function ProfilePage({
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      redirect("/login?next=/profile");
-    }
+    if (!user) redirect("/login?next=/profile");
 
     const full_name = getValue(formData, "full_name");
     const bio = getValue(formData, "bio");
@@ -196,84 +166,41 @@ export default async function ProfilePage({
       redirect("/profile?error=name");
     }
 
-    if (bio.length > 600) {
-      redirect("/profile?error=bio");
-    }
+    if (bio.length > 600) redirect("/profile?error=bio");
+    if (phone.length > 30) redirect("/profile?error=phone");
+    if (locale.length > 80) redirect("/profile?error=locale");
 
-    if (phone.length > 30) {
-      redirect("/profile?error=phone");
-    }
-
-    if (locale.length > 80) {
-      redirect("/profile?error=locale");
-    }
-
-    if (
-      avatar_url.length > 1000 ||
-      !isValidUrl(avatar_url)
-    ) {
+    if (avatar_url.length > 1000 || !isValidUrl(avatar_url)) {
       redirect("/profile?error=avatar");
     }
 
-    const changes = {
-      full_name,
-      bio: bio || null,
-      avatar_url: avatar_url || null,
-      phone: phone || null,
-      locale: locale || null,
-    };
-
-    const {
-      data: updatedProfile,
-      error: updateError,
-    } = await supabase
+    const { error } = await supabase
       .from("profiles")
-      .update({
-        ...changes,
-      })
-      .eq("id", user.id)
-      .select("id")
-      .maybeSingle();
-
-    if (updateError) {
-      console.error(
-        "Profile update failed:",
-        updateError.message
+      .upsert(
+        {
+          id: user.id,
+          email: user.email ?? null,
+          full_name,
+          bio: bio || null,
+          avatar_url: avatar_url || null,
+          phone: phone || null,
+          locale: locale || null,
+        },
+        { onConflict: "id" }
       );
 
+    if (error) {
+      console.error("Profile save failed:", error.message);
       redirect("/profile?error=save");
     }
 
-    // Insert a profile if the user does not have one yet.
-    if (!updatedProfile) {
-      const { error: insertError } = await supabase
-        .from("profiles")
-        .insert({
-          id: user.id,
-          email: user.email ?? null,
-          ...changes,
-        });
-
-      if (insertError) {
-        console.error(
-          "Profile creation failed:",
-          insertError.message
-        );
-
-        redirect("/profile?error=save");
-      }
-    }
-
-    const { error: metadataError } =
-      await supabase.auth.updateUser({
-        data: {
-          full_name,
-        },
-      });
+    const { error: metadataError } = await supabase.auth.updateUser({
+      data: { full_name },
+    });
 
     if (metadataError) {
       console.error(
-        "Profile saved, but authentication metadata was not updated:",
+        "Profile saved, but authentication metadata update failed:",
         metadataError.message
       );
     }
@@ -289,16 +216,14 @@ export default async function ProfilePage({
   return (
     <main className="profile-page">
       <div className="container profile-container">
-        <div className="profile-page-heading">
+        <header className="profile-page-heading">
           <p className="eyebrow">YOUR IDENTITY</p>
-
           <h1>My Profile</h1>
-
           <p>
-            Tell the RuffNeck Connect community who you are,
-            what interests you, and how you can contribute.
+            Introduce yourself to the RuffNeck Connect community and
+            tell people how you can contribute.
           </p>
-        </div>
+        </header>
 
         {params.saved === "1" && (
           <div className="alert alert-success" role="status">
@@ -325,23 +250,17 @@ export default async function ProfilePage({
                 className="profile-avatar"
               />
             ) : (
-              <div
-                className="profile-avatar profile-avatar-fallback"
-                aria-label="Profile initials"
-              >
+              <div className="profile-avatar profile-avatar-fallback">
                 {getInitials(fullName)}
               </div>
             )}
 
             <div className="profile-identity-copy">
               <h2>{fullName || "Complete your profile"}</h2>
-
               <p>{user.email}</p>
 
               {profile?.role && (
-                <span className="profile-role">
-                  {profile.role}
-                </span>
+                <span className="profile-role">{profile.role}</span>
               )}
             </div>
           </div>
@@ -363,9 +282,7 @@ export default async function ProfilePage({
               <span style={{ width: `${completion}%` }} />
             </div>
 
-            <p>
-              A complete profile helps other members get to know you.
-            </p>
+            <p>A complete profile helps other members get to know you.</p>
           </div>
         </section>
 
@@ -394,18 +311,13 @@ export default async function ProfilePage({
         <section className="profile-editor">
           <div className="profile-editor-heading">
             <p className="eyebrow">PERSONAL DETAILS</p>
-
             <h2>Edit your profile</h2>
-
-            <p>
-              Update your information and keep your community identity current.
-            </p>
+            <p>Keep your member information up to date.</p>
           </div>
 
           <form action={saveProfile} className="profile-form">
             <div className="form-field">
               <label htmlFor="full_name">Full name *</label>
-
               <input
                 id="full_name"
                 name="full_name"
@@ -419,37 +331,30 @@ export default async function ProfilePage({
 
             <div className="form-field">
               <label htmlFor="email">Email address</label>
-
               <input
                 id="email"
                 type="email"
                 value={user.email ?? ""}
-                disabled
                 readOnly
+                disabled
               />
-
-              <span className="form-help">
-                Your email is managed by account authentication.
-              </span>
             </div>
 
             <div className="form-field">
               <label htmlFor="bio">About me</label>
-
               <textarea
                 id="bio"
                 name="bio"
                 defaultValue={profile?.bio ?? ""}
                 rows={5}
                 maxLength={600}
-                placeholder="Share your interests, experience, skills, or goals."
+                placeholder="Share your interests, skills, experience, or goals."
               />
             </div>
 
             <div className="grid grid-2">
               <div className="form-field">
                 <label htmlFor="phone">Phone number</label>
-
                 <input
                   id="phone"
                   name="phone"
@@ -463,7 +368,6 @@ export default async function ProfilePage({
 
               <div className="form-field">
                 <label htmlFor="locale">Preferred language</label>
-
                 <select
                   id="locale"
                   name="locale"
@@ -480,7 +384,6 @@ export default async function ProfilePage({
 
             <div className="form-field">
               <label htmlFor="avatar_url">Profile photo URL</label>
-
               <input
                 id="avatar_url"
                 name="avatar_url"
@@ -489,10 +392,10 @@ export default async function ProfilePage({
                 maxLength={1000}
                 placeholder="https://drive.google.com/file/d/..."
               />
-
               <span className="form-help">
-                Google Drive sharing links can be converted for display.
-                The image must be shared with Anyone with the link — Viewer.
+                Google Drive photos must be shared with Anyone with the link
+                — Viewer. Drive image URLs are not guaranteed to work
+                permanently.
               </span>
             </div>
 
@@ -501,10 +404,7 @@ export default async function ProfilePage({
                 Save profile
               </button>
 
-              <Link
-                href="/home"
-                className="button button-secondary"
-              >
+              <Link href="/home" className="button button-secondary">
                 Back to home
               </Link>
             </div>
@@ -515,39 +415,27 @@ export default async function ProfilePage({
           <h2>Keep building connections</h2>
 
           <div className="profile-shortcut-grid">
-            <Link
-              href="/communities"
-              className="profile-shortcut"
-            >
+            <Link href="/communities" className="profile-shortcut">
               <span>
                 <strong>Communities</strong>
                 <small>Find people who share your goals.</small>
               </span>
-
               <span aria-hidden="true">→</span>
             </Link>
 
-            <Link
-              href="/intents"
-              className="profile-shortcut"
-            >
+            <Link href="/intents" className="profile-shortcut">
               <span>
                 <strong>Discover</strong>
                 <small>Explore needs, offers, and projects.</small>
               </span>
-
               <span aria-hidden="true">→</span>
             </Link>
 
-            <Link
-              href="/messages"
-              className="profile-shortcut"
-            >
+            <Link href="/messages" className="profile-shortcut">
               <span>
                 <strong>Messages</strong>
                 <small>Continue your conversations.</small>
               </span>
-
               <span aria-hidden="true">→</span>
             </Link>
           </div>
