@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-type PublicMember = {
+type PublicProfile = {
   profile_id: string;
   full_name: string | null;
   bio: string | null;
@@ -13,17 +13,39 @@ type PublicMember = {
   locale: string | null;
 };
 
-type MemberPageProps = {
+type PageProps = {
   params: Promise<{
     id: string;
   }>;
 };
 
-function getAvatarDisplayUrl(value: string | null): string {
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) return "RN";
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function getAvatarUrl(value: string | null): string {
   if (!value) return "";
 
   try {
     const url = new URL(value);
+
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return "";
+    }
 
     if (
       url.hostname === "drive.google.com" ||
@@ -33,15 +55,11 @@ function getAvatarDisplayUrl(value: string | null): string {
         url.pathname.match(/\/file\/d\/([^/]+)/)?.[1] ??
         url.searchParams.get("id");
 
-      if (!fileId) return "";
-
-      return `https://drive.google.com/thumbnail?id=${encodeURIComponent(
-        fileId
-      )}&sz=w600`;
-    }
-
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      return "";
+      return fileId
+        ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(
+            fileId
+          )}&sz=w800`
+        : "";
     }
 
     return url.toString();
@@ -50,26 +68,21 @@ function getAvatarDisplayUrl(value: string | null): string {
   }
 }
 
-function getInitials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
+function getLanguageName(locale: string | null): string {
+  if (!locale) return "";
+
+  const languages: Record<string, string> = {
+    en: "English",
+    ha: "Hausa",
+    yo: "Yoruba",
+    ig: "Igbo",
+  };
+
+  return languages[locale] ?? locale;
 }
 
-export default async function MemberProfilePage({
-  params,
-}: MemberPageProps) {
+export default async function MemberProfilePage({ params }: PageProps) {
   const { id } = await params;
-
-  const isUuid =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      id
-    );
-
-  if (!isUuid) notFound();
 
   const supabase = await createClient();
 
@@ -81,6 +94,15 @@ export default async function MemberProfilePage({
     redirect(`/login?next=${encodeURIComponent(`/members/${id}`)}`);
   }
 
+  if (!isUuid(id)) {
+    notFound();
+  }
+
+  // Members should access their own profile through the profile editor.
+  if (id === user.id) {
+    redirect("/profile");
+  }
+
   const { data, error } = await supabase.rpc(
     "get_public_member_profile",
     {
@@ -89,137 +111,128 @@ export default async function MemberProfilePage({
   );
 
   if (error) {
-    console.error("Public member profile lookup failed:", error.message);
-
-    return (
-      <main className="container page-section">
-        <Link href="/members" className="text-link">
-          ← Back to members
-        </Link>
-
-        <section className="card" style={{ marginTop: 24 }}>
-          <h1>Profile unavailable</h1>
-          <p>
-            This profile could not be loaded. Please try again later.
-          </p>
-        </section>
-      </main>
-    );
+    console.error("Member profile lookup failed:", error.message);
+    notFound();
   }
 
-  const member = (Array.isArray(data) ? data[0] : data) as
-    | PublicMember
-    | null;
+  const profile = (
+    Array.isArray(data) ? data[0] : data
+  ) as PublicProfile | null;
 
-  if (!member) notFound();
+  if (!profile || profile.profile_id !== id) {
+    notFound();
+  }
 
-  const name = member.full_name?.trim() || "RuffNeck member";
-  const avatarUrl = getAvatarDisplayUrl(member.avatar_url);
+  const name = profile.full_name?.trim() || "RuffNeck member";
+  const avatarUrl = getAvatarUrl(profile.avatar_url);
+  const language = getLanguageName(profile.locale);
 
   return (
-    <main className="container page-section">
-      <Link href="/members" className="text-link">
-        ← Back to members
-      </Link>
+    <main className="profile-page">
+      <div className="container profile-container">
+        <nav aria-label="Breadcrumb" className="member-profile-breadcrumb">
+          <Link href="/members">Member directory</Link>
+          <span aria-hidden="true">/</span>
+          <span>{name}</span>
+        </nav>
 
-      <section
-        className="card"
-        style={{
-          marginTop: 24,
-          padding: "clamp(24px, 5vw, 48px)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 24,
-            flexWrap: "wrap",
-            marginBottom: 32,
-          }}
-        >
-          {avatarUrl ? (
-            <Image
-              src={avatarUrl}
-              alt={`${name}'s profile photo`}
-              width={120}
-              height={120}
-              unoptimized
-              style={{
-                width: 120,
-                height: 120,
-                borderRadius: "50%",
-                objectFit: "cover",
-                background: "var(--surface, #f3f6fa)",
-              }}
-            />
-          ) : (
-            <div
-              aria-label={`${name}'s initials`}
-              style={{
-                width: 120,
-                height: 120,
-                flexShrink: 0,
-                display: "grid",
-                placeItems: "center",
-                borderRadius: "50%",
-                background: "var(--navy, #0b1e3a)",
-                color: "#fff",
-                fontSize: 36,
-                fontWeight: 700,
-              }}
-            >
-              {getInitials(name) || "R"}
-            </div>
-          )}
-
-          <div style={{ flex: "1 1 240px" }}>
-            <p className="eyebrow">RUFFNECK CONNECT · MEMBER PROFILE</p>
-            <h1 style={{ marginBottom: 10 }}>{name}</h1>
-
-            {member.locale && (
-              <p className="muted">{member.locale}</p>
+        <section className="member-profile-hero">
+          <div className="member-profile-identity">
+            {avatarUrl ? (
+              <Image
+                src={avatarUrl}
+                alt={`${name}'s profile photo`}
+                width={132}
+                height={132}
+                unoptimized
+                className="member-profile-avatar"
+                priority
+              />
+            ) : (
+              <div
+                className="member-profile-avatar member-profile-avatar-fallback"
+                aria-label={`${name}'s initials`}
+              >
+                {getInitials(name)}
+              </div>
             )}
+
+            <div className="member-profile-heading">
+              <p className="eyebrow">RUFFNECK CONNECT MEMBER</p>
+              <h1>{name}</h1>
+
+              {language && (
+                <p className="member-profile-language">
+                  <span aria-hidden="true">◎</span> {language}
+                </p>
+              )}
+            </div>
           </div>
+
+          <div className="member-profile-actions">
+            <Link
+              href={`/messages?to=${encodeURIComponent(profile.profile_id)}`}
+              className="button"
+            >
+              Message member
+            </Link>
+
+            <Link
+              href="/members"
+              className="button button-secondary"
+            >
+              Back to directory
+            </Link>
+          </div>
+        </section>
+
+        <div className="member-profile-content">
+          <section className="card member-profile-about">
+            <p className="eyebrow">ABOUT</p>
+            <h2>Introduction</h2>
+
+            {profile.bio?.trim() ? (
+              <p className="member-profile-bio">{profile.bio.trim()}</p>
+            ) : (
+              <p className="muted">
+                This member has not added an introduction yet.
+              </p>
+            )}
+          </section>
+
+          <aside className="card member-profile-sidebar">
+            <p className="eyebrow">CONNECT</p>
+            <h2>Build a connection</h2>
+
+            <p>
+              Start a conversation to explore shared interests,
+              opportunities, or potential collaborations.
+            </p>
+
+            <Link
+              href={`/messages?to=${encodeURIComponent(profile.profile_id)}`}
+              className="button"
+              style={{ width: "100%" }}
+            >
+              Send a message
+            </Link>
+
+            <Link
+              href="/communities"
+              className="member-profile-secondary-link"
+            >
+              Explore communities →
+            </Link>
+
+            <Link
+              href="/intents"
+              className="member-profile-secondary-link"
+            >
+              Discover opportunities →
+            </Link>
+          </aside>
         </div>
-
-        <div
-          style={{
-            borderTop: "1px solid var(--border, #d9e1ec)",
-            paddingTop: 24,
-          }}
-        >
-          <h2>About</h2>
-
-          <p
-            style={{
-              lineHeight: 1.8,
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-            }}
-          >
-            {member.bio?.trim() ||
-              "This member has not added a biography yet."}
-          </p>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-            marginTop: 28,
-          }}
-        >
-          <Link href="/communities" className="button">
-            Explore communities
-          </Link>
-
-          <Link href="/messages" className="button button-secondary">
-            Open messages
-          </Link>
-        </div>
-      </section>
+      </div>
     </main>
   );
 }
