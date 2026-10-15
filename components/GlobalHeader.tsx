@@ -10,7 +10,6 @@ export default function GlobalHeader() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Hide the shared navigation on authentication pages.
   if (
     pathname === "/login" ||
     pathname.startsWith("/auth/")
@@ -98,6 +97,10 @@ export default function GlobalHeader() {
 
               <Link href="/profile" onClick={closeMenu}>
                 My Profile
+              </Link>
+
+              <Link href="/members" onClick={closeMenu}>
+                Members
               </Link>
 
               <Link href="/communities" onClick={closeMenu}>
