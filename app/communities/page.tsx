@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
-import NotificationBell from "@/components/NotificationBell";
 
 type Community = {
   id: string;
@@ -48,7 +52,9 @@ export default function CommunitiesPage() {
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
-  const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [visibility, setVisibility] = useState<"public" | "private">(
+    "public"
+  );
   const [approvalRequired, setApprovalRequired] = useState(true);
 
   const loadCommunities = useCallback(async () => {
@@ -57,6 +63,7 @@ export default function CommunitiesPage() {
 
     try {
       const supabase = createClient();
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -118,12 +125,15 @@ export default function CommunitiesPage() {
       (community.location_label ?? "").toLowerCase().includes(searchText);
 
     const matchesCategory =
-      categoryFilter === "all" || community.category === categoryFilter;
+      categoryFilter === "all" ||
+      community.category === categoryFilter;
 
     return matchesSearch && matchesCategory;
   });
 
-  async function handleCreateCommunity(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateCommunity(
+    event: FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
     setError("");
     setNotice("");
@@ -137,6 +147,7 @@ export default function CommunitiesPage() {
 
     try {
       const supabase = createClient();
+
       const {
         data: { user },
         error: authError,
@@ -173,6 +184,7 @@ export default function CommunitiesPage() {
       }
 
       setNotice(`Community "${result.community.name}" was created.`);
+
       setName("");
       setDescription("");
       setCategory("");
@@ -196,6 +208,7 @@ export default function CommunitiesPage() {
 
     try {
       const supabase = createClient();
+
       const {
         data: { user },
         error: authError,
@@ -243,23 +256,6 @@ export default function CommunitiesPage() {
 
   return (
     <>
-      <header className="site-header">
-        <div className="container site-header-inner">
-          <Link href="/home" className="brand">
-            <span className="brand-mark">RN</span>
-            <span>RuffNeck Connect</span>
-          </Link>
-
-          <nav className="site-nav" aria-label="Main navigation">
-            <Link href="/home">Home</Link>
-            <Link href="/communities">Communities</Link>
-            <Link href="/intents">Discover</Link>
-            <Link href="/messages">Messages</Link>
-            <NotificationBell />
-          </nav>
-        </div>
-      </header>
-
       <main className="container page-section">
         <div className="page-heading">
           <p className="eyebrow">FIND YOUR PEOPLE</p>
@@ -273,6 +269,7 @@ export default function CommunitiesPage() {
           >
             <div>
               <h1>Communities</h1>
+
               <p>
                 Discover communities built around shared interests, needs,
                 opportunities, and practical goals.
@@ -319,7 +316,10 @@ export default function CommunitiesPage() {
 
             <form onSubmit={handleCreateCommunity} className="stack">
               <div className="form-field">
-                <label htmlFor="community-name">Community name *</label>
+                <label htmlFor="community-name">
+                  Community name *
+                </label>
+
                 <input
                   id="community-name"
                   value={name}
@@ -332,11 +332,16 @@ export default function CommunitiesPage() {
               </div>
 
               <div className="form-field">
-                <label htmlFor="community-description">Description</label>
+                <label htmlFor="community-description">
+                  Description
+                </label>
+
                 <textarea
                   id="community-description"
                   value={description}
-                  onChange={(event) => setDescription(event.target.value)}
+                  onChange={(event) =>
+                    setDescription(event.target.value)
+                  }
                   placeholder="Explain the community's purpose and who it is for."
                   maxLength={1000}
                 />
@@ -344,7 +349,10 @@ export default function CommunitiesPage() {
 
               <div className="grid grid-2">
                 <div className="form-field">
-                  <label htmlFor="community-category">Category</label>
+                  <label htmlFor="community-category">
+                    Category
+                  </label>
+
                   <input
                     id="community-category"
                     value={category}
@@ -355,11 +363,16 @@ export default function CommunitiesPage() {
                 </div>
 
                 <div className="form-field">
-                  <label htmlFor="community-location">Location</label>
+                  <label htmlFor="community-location">
+                    Location
+                  </label>
+
                   <input
                     id="community-location"
                     value={locationLabel}
-                    onChange={(event) => setLocationLabel(event.target.value)}
+                    onChange={(event) =>
+                      setLocationLabel(event.target.value)
+                    }
                     placeholder="e.g. Kano, Nigeria or Online"
                     maxLength={120}
                   />
@@ -368,7 +381,10 @@ export default function CommunitiesPage() {
 
               <div className="grid grid-2">
                 <div className="form-field">
-                  <label htmlFor="community-visibility">Visibility</label>
+                  <label htmlFor="community-visibility">
+                    Visibility
+                  </label>
+
                   <select
                     id="community-visibility"
                     value={visibility}
@@ -381,22 +397,32 @@ export default function CommunitiesPage() {
                     <option value="public">Public</option>
                     <option value="private">Private</option>
                   </select>
+
                   <span className="form-help">
                     Private communities are not listed in public discovery.
                   </span>
                 </div>
 
                 <div className="form-field">
-                  <label htmlFor="community-approval">Membership</label>
+                  <label htmlFor="community-approval">
+                    Membership
+                  </label>
+
                   <select
                     id="community-approval"
                     value={approvalRequired ? "approval" : "open"}
                     onChange={(event) =>
-                      setApprovalRequired(event.target.value === "approval")
+                      setApprovalRequired(
+                        event.target.value === "approval"
+                      )
                     }
                   >
-                    <option value="approval">Require owner approval</option>
-                    <option value="open">Allow immediate joining</option>
+                    <option value="approval">
+                      Require owner approval
+                    </option>
+                    <option value="open">
+                      Allow immediate joining
+                    </option>
                   </select>
                 </div>
               </div>
@@ -421,7 +447,10 @@ export default function CommunitiesPage() {
         <section style={{ marginBottom: 28 }}>
           <div className="grid grid-2">
             <div className="form-field">
-              <label htmlFor="community-search">Search communities</label>
+              <label htmlFor="community-search">
+                Search communities
+              </label>
+
               <input
                 id="community-search"
                 type="search"
@@ -432,13 +461,19 @@ export default function CommunitiesPage() {
             </div>
 
             <div className="form-field">
-              <label htmlFor="category-filter">Filter by category</label>
+              <label htmlFor="category-filter">
+                Filter by category
+              </label>
+
               <select
                 id="category-filter"
                 value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
+                onChange={(event) =>
+                  setCategoryFilter(event.target.value)
+                }
               >
                 <option value="all">All categories</option>
+
                 {categories.map((item) => (
                   <option value={item} key={item}>
                     {item}
@@ -456,11 +491,16 @@ export default function CommunitiesPage() {
         ) : filteredCommunities.length === 0 ? (
           <div className="empty-state">
             <h2>No communities found.</h2>
+
             <p>
               Try another search or create a community for people with a shared
               goal.
             </p>
-            <button type="button" onClick={() => setShowForm(true)}>
+
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+            >
               Create a community
             </button>
           </div>
@@ -471,7 +511,10 @@ export default function CommunitiesPage() {
               const isOwner = community.owner_id === currentUserId;
 
               return (
-                <article className="feature-card" key={community.id}>
+                <article
+                  className="feature-card"
+                  key={community.id}
+                >
                   <div
                     className="row"
                     style={{
@@ -484,7 +527,9 @@ export default function CommunitiesPage() {
                     </span>
 
                     {community.visibility === "private" && (
-                      <span className="badge badge-muted">Private</span>
+                      <span className="badge badge-muted">
+                        Private
+                      </span>
                     )}
                   </div>
 
@@ -506,9 +551,13 @@ export default function CommunitiesPage() {
                       Your community
                     </span>
                   ) : membership?.status === "active" ? (
-                    <span className="badge badge-success">Member</span>
+                    <span className="badge badge-success">
+                      Member
+                    </span>
                   ) : membership?.status === "pending" ? (
-                    <span className="badge badge-gold">Request pending</span>
+                    <span className="badge badge-gold">
+                      Request pending
+                    </span>
                   ) : membership?.status === "removed" ? (
                     <span className="badge badge-muted">
                       Membership removed
@@ -553,7 +602,10 @@ export default function CommunitiesPage() {
           className="container row"
           style={{ justifyContent: "space-between" }}
         >
-          <span>© {new Date().getFullYear()} RuffNeck Connect</span>
+          <span>
+            © {new Date().getFullYear()} RuffNeck Connect
+          </span>
+
           <Link href="/home" className="text-link">
             Back to home
           </Link>
