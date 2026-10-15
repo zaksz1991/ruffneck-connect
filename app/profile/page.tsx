@@ -13,6 +13,7 @@ type Profile = {
   phone: string | null;
   locale: string | null;
   role: string | null;
+  show_in_directory: boolean;
 };
 
 type PageProps = {
@@ -83,12 +84,11 @@ const errorMessages: Record<string, string> = {
   phone: "Your phone number must not exceed 30 characters.",
   locale: "Your preferred language must not exceed 80 characters.",
   avatar: "Enter a valid photo URL beginning with HTTP or HTTPS.",
+  privacy: "Choose whether your profile should appear in the member directory.",
   save: "Your profile could not be saved. Please try again.",
 };
 
-export default async function ProfilePage({
-  searchParams,
-}: PageProps) {
+export default async function ProfilePage({ searchParams }: PageProps) {
   const params = await searchParams;
   const supabase = await createClient();
 
@@ -104,7 +104,9 @@ export default async function ProfilePage({
     await Promise.all([
       supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url, phone, locale, role")
+        .select(
+          "full_name, bio, avatar_url, phone, locale, role, show_in_directory"
+        )
         .eq("id", user.id)
         .maybeSingle(),
 
@@ -162,6 +164,7 @@ export default async function ProfilePage({
     const avatar_url = getValue(formData, "avatar_url");
     const phone = getValue(formData, "phone");
     const locale = getValue(formData, "locale");
+    const directoryValue = formData.get("show_in_directory");
 
     if (full_name.length < 2 || full_name.length > 100) {
       redirect("/profile?error=name");
@@ -175,20 +178,28 @@ export default async function ProfilePage({
       redirect("/profile?error=avatar");
     }
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert(
-        {
-          id: user.id,
-          email: user.email ?? null,
-          full_name,
-          bio: bio || null,
-          avatar_url: avatar_url || null,
-          phone: phone || null,
-          locale: locale || null,
-        },
-        { onConflict: "id" }
-      );
+    if (
+      directoryValue !== "true" &&
+      directoryValue !== "false"
+    ) {
+      redirect("/profile?error=privacy");
+    }
+
+    const show_in_directory = directoryValue === "true";
+
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        id: user.id,
+        email: user.email ?? null,
+        full_name,
+        bio: bio || null,
+        avatar_url: avatar_url || null,
+        phone: phone || null,
+        locale: locale || null,
+        show_in_directory,
+      },
+      { onConflict: "id" }
+    );
 
     if (error) {
       console.error("Profile save failed:", error.message);
@@ -208,11 +219,15 @@ export default async function ProfilePage({
 
     revalidatePath("/profile");
     revalidatePath("/home");
+    revalidatePath("/members");
+    revalidatePath(`/members/${user.id}`);
     revalidatePath("/communities");
     revalidatePath("/intents");
 
     redirect("/profile?saved=1");
   }
+
+  const showInDirectory = profile?.show_in_directory ?? true;
 
   return (
     <main className="profile-page">
@@ -283,7 +298,9 @@ export default async function ProfilePage({
               <span style={{ width: `${completion}%` }} />
             </div>
 
-            <p>A complete profile helps other members get to know you.</p>
+            <p>
+              A complete profile helps other members get to know you.
+            </p>
           </div>
         </section>
 
@@ -400,6 +417,50 @@ export default async function ProfilePage({
               </span>
             </div>
 
+            <div
+              className="form-field"
+              style={{
+                padding: 18,
+                border: "1px solid var(--border, #d9e1ec)",
+                borderRadius: 12,
+              }}
+            >
+              <label
+                htmlFor="show_in_directory"
+                style={{
+                  display: "block",
+                  fontWeight: 700,
+                  marginBottom: 8,
+                }}
+              >
+                Member directory privacy
+              </label>
+
+              <p className="form-help" style={{ marginBottom: 14 }}>
+                Choose whether other signed-in members can find your
+                profile in the member directory.
+              </p>
+
+              <select
+                id="show_in_directory"
+                name="show_in_directory"
+                defaultValue={String(showInDirectory)}
+              >
+                <option value="true">
+                  Show my profile in the member directory
+                </option>
+                <option value="false">
+                  Hide my profile from the member directory
+                </option>
+              </select>
+
+              <span className="form-help">
+                Hiding your profile should also prevent access through
+                the public member-profile route once the directory RPC
+                privacy filters are installed.
+              </span>
+            </div>
+
             <div className="profile-form-actions">
               <button type="submit" className="button">
                 Save profile
@@ -436,6 +497,14 @@ export default async function ProfilePage({
               <span>
                 <strong>Messages</strong>
                 <small>Continue your conversations.</small>
+              </span>
+              <span aria-hidden="true">→</span>
+            </Link>
+
+            <Link href="/members" className="profile-shortcut">
+              <span>
+                <strong>Member directory</strong>
+                <small>Discover other members.</small>
               </span>
               <span aria-hidden="true">→</span>
             </Link>
