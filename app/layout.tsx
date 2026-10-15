@@ -43,8 +43,10 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://ruffneck-connect.vercel.app",
     siteName: "RuffNeck Connect",
+
     title:
       "RuffNeck Connect — Community. Collaboration. Action.",
+
     description:
       "Find your community, connect with people, share opportunities, and build meaningful relationships.",
 
@@ -61,8 +63,10 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "RuffNeck Connect",
+
     description:
       "Find your community. Share opportunities. Build together.",
+
     images: ["/og-image.png"],
   },
 };
