@@ -159,7 +159,9 @@ export default async function ProfilePage({ searchParams }: PageProps) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) redirect("/login?next=/profile");
+    if (!user) {
+      redirect("/login?next=/profile");
+    }
 
     const full_name = getValue(formData, "full_name");
     const bio = getValue(formData, "bio");
@@ -172,9 +174,17 @@ export default async function ProfilePage({ searchParams }: PageProps) {
       redirect("/profile?error=name");
     }
 
-    if (bio.length > 600) redirect("/profile?error=bio");
-    if (phone.length > 30) redirect("/profile?error=phone");
-    if (locale.length > 80) redirect("/profile?error=locale");
+    if (bio.length > 600) {
+      redirect("/profile?error=bio");
+    }
+
+    if (phone.length > 30) {
+      redirect("/profile?error=phone");
+    }
+
+    if (locale.length > 80) {
+      redirect("/profile?error=locale");
+    }
 
     if (avatar_url.length > 1000 || !isValidUrl(avatar_url)) {
       redirect("/profile?error=avatar");
@@ -249,7 +259,7 @@ export default async function ProfilePage({ searchParams }: PageProps) {
 
         {params.error && (
           <div className="alert alert-error" role="alert">
-            {errorMessages[params.error] ||
+            {errorMessages[params.error] ??
               "Something went wrong. Please try again."}
           </div>
         )}
@@ -411,9 +421,8 @@ export default async function ProfilePage({ searchParams }: PageProps) {
                 placeholder="https://drive.google.com/file/d/..."
               />
               <span className="form-help">
-                Google Drive photos must be shared with Anyone with the link
-                — Viewer. Drive image URLs are not guaranteed to work
-                permanently.
+                For Google Drive photos, set sharing to Anyone with the
+                link — Viewer. Drive image URLs may not always work.
               </span>
             </div>
 
@@ -467,78 +476,13 @@ export default async function ProfilePage({ searchParams }: PageProps) {
           </form>
         </section>
 
-        <section className="card" style={{ marginTop: 28 }}>
-          <div className="profile-editor-heading">
-            <p className="eyebrow">MEMBER VIEW</p>
-            <h2>Profile preview</h2>
-            <p>
-              Preview of your saved information as it may appear to
-              other members. Unsaved form changes will not appear here.
-            </p>
-          </div>
-
-          {!showInDirectory ? (
-            <div className="alert" role="status">
-              <strong>Your profile is hidden.</strong>
-              <p>
-                Other members should not be able to find your profile
-                through the member directory while this setting is off.
-              </p>
-            </div>
-          ) : (
-            <article
-              className="profile-identity"
-              style={{
-                alignItems: "flex-start",
-                padding: 20,
-                border: "1px solid var(--border, #d9e1ec)",
-                borderRadius: 12,
-              }}
-            >
-              {avatarUrl ? (
-                <Image
-                  src={avatarUrl}
-                  alt={`${fullName || "Member"} profile photo`}
-                  width={88}
-                  height={88}
-                  unoptimized
-                  className="profile-avatar"
-                />
-              ) : (
-                <div className="profile-avatar profile-avatar-fallback">
-                  {getInitials(fullName)}
-                </div>
-              )}
-
-              <div className="profile-identity-copy">
-                <h3>{fullName || "RuffNeck member"}</h3>
-
-                {profile?.locale && (
-                  <p className="muted">
-                    {profile.locale === "en"
-                      ? "English"
-                      : profile.locale === "ha"
-                        ? "Hausa"
-                        : profile.locale === "yo"
-                          ? "Yoruba"
-                          : profile.locale === "ig"
-                            ? "Igbo"
-                            : profile.locale}
-                  </p>
-                )}
-
-                <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
-                  {profile?.bio?.trim() ||
-                    "You have not added a biography yet."}
-                </p>
-
-                <Link href="/members" className="text-link">
-                  Browse member directory →
-                </Link>
-              </div>
-            </article>
-          )}
-        </section>
+        <ProfilePreview
+          initialName={fullName}
+          initialBio={profile?.bio ?? ""}
+          initialAvatarUrl={profile?.avatar_url ?? ""}
+          initialLocale={profile?.locale ?? ""}
+          showInDirectory={showInDirectory}
+        />
 
         <section className="profile-shortcuts">
           <h2>Keep building connections</h2>
