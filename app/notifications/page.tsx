@@ -15,9 +15,7 @@ type Notification = {
   read_at: string | null;
 };
 
-function isSafeInternalLink(
-  link: string | null
-): link is string {
+function isSafeInternalLink(link: string | null): link is string {
   if (
     !link ||
     !link.startsWith("/") ||
@@ -29,9 +27,9 @@ function isSafeInternalLink(
   }
 
   try {
-    const url = new URL(link, window.location.origin);
+    const url = new URL(link, "https://ruffneck-connect.invalid");
 
-    if (url.origin !== window.location.origin) {
+    if (url.origin !== "https://ruffneck-connect.invalid") {
       return false;
     }
 
@@ -103,7 +101,10 @@ export default function NotificationsPage() {
 
   const markAsRead = useCallback(
     async (notificationId?: string): Promise<boolean> => {
-      if (markingAll || (notificationId && updatingIds.includes(notificationId))) {
+      if (
+        markingAll ||
+        (notificationId && updatingIds.includes(notificationId))
+      ) {
         return false;
       }
 
@@ -140,7 +141,6 @@ export default function NotificationsPage() {
         setMarkingAll(true);
       }
 
-      // Update the interface immediately while the request runs.
       setNotifications((current) =>
         current.map((notification) => {
           if (
@@ -167,7 +167,10 @@ export default function NotificationsPage() {
           return 0;
         }
 
-        return Math.max(0, current - (target && !target.is_read ? 1 : 0));
+        return Math.max(
+          0,
+          current - (target && !target.is_read ? 1 : 0)
+        );
       });
 
       try {
@@ -199,7 +202,6 @@ export default function NotificationsPage() {
             : "All notifications marked as read."
         );
 
-        // Reconcile the local state with the server.
         await loadNotifications();
 
         return true;
@@ -316,6 +318,9 @@ export default function NotificationsPage() {
             {notifications.map((notification) => {
               const isUpdating = updatingIds.includes(notification.id);
               const safeLink = isSafeInternalLink(notification.link);
+              const notificationLink = safeLink
+                ? notification.link
+                : null;
 
               return (
                 <article
@@ -340,9 +345,7 @@ export default function NotificationsPage() {
 
                   <h2>{notification.title}</h2>
 
-                  {notification.body && (
-                    <p>{notification.body}</p>
-                  )}
+                  {notification.body && <p>{notification.body}</p>}
 
                   <p className="muted">
                     {formatDate(notification.created_at)}
@@ -356,10 +359,10 @@ export default function NotificationsPage() {
                       marginTop: "12px",
                     }}
                   >
-                    {safeLink && (
+                    {notificationLink && (
                       <Link
                         className="button button-primary"
-                        href={notification.link}
+                        href={notificationLink}
                         onClick={async (event) => {
                           if (notification.is_read) {
                             return;
@@ -367,12 +370,10 @@ export default function NotificationsPage() {
 
                           event.preventDefault();
 
-                          const success = await markAsRead(
-                            notification.id
-                          );
+                          const marked = await markAsRead(notification.id);
 
-                          if (success) {
-                            window.location.assign(notification.link!);
+                          if (marked) {
+                            window.location.assign(notificationLink);
                           }
                         }}
                       >
