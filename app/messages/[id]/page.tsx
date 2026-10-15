@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import NotificationBell from "@/components/NotificationBell";
 
 export const dynamic = "force-dynamic";
 
@@ -61,14 +60,16 @@ export default async function ConversationPage({
     );
   }
 
-  const { data: conversation, error: conversationError } =
-    await supabase
-      .from("conversations")
-      .select(
-        "id, conversation_type, intent_id, title, created_at"
-      )
-      .eq("id", id)
-      .maybeSingle();
+  const {
+    data: conversation,
+    error: conversationError,
+  } = await supabase
+    .from("conversations")
+    .select(
+      "id, conversation_type, intent_id, title, created_at"
+    )
+    .eq("id", id)
+    .maybeSingle();
 
   if (conversationError) {
     console.error(
@@ -83,14 +84,16 @@ export default async function ConversationPage({
 
   const currentConversation = conversation as Conversation;
 
-  const { data: ownParticipant, error: participantError } =
-    await supabase
-      .from("conversation_participants")
-      .select("user_id, status")
-      .eq("conversation_id", id)
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .maybeSingle();
+  const {
+    data: ownParticipant,
+    error: participantError,
+  } = await supabase
+    .from("conversation_participants")
+    .select("user_id, status")
+    .eq("conversation_id", id)
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
 
   if (participantError || !ownParticipant) {
     notFound();
@@ -129,16 +132,18 @@ export default async function ConversationPage({
       ? currentConversation.title || "Intent conversation"
       : otherNames.join(", ") || "Direct conversation";
 
-  const { data: messageRows, error: messagesError } =
-    await supabase
-      .from("messages")
-      .select(
-        "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at"
-      )
-      .eq("conversation_id", id)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: true })
-      .limit(200);
+  const {
+    data: messageRows,
+    error: messagesError,
+  } = await supabase
+    .from("messages")
+    .select(
+      "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at"
+    )
+    .eq("conversation_id", id)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(200);
 
   if (messagesError) {
     console.error(
@@ -151,24 +156,6 @@ export default async function ConversationPage({
 
   return (
     <main className="page-shell">
-      <header className="site-header">
-        <div className="container nav-inner">
-          <Link href="/home" className="brand">
-            RuffNeck Connect
-          </Link>
-
-          <nav className="main-nav" aria-label="Main navigation">
-            <Link href="/home">Home</Link>
-            <Link href="/communities">Communities</Link>
-            <Link href="/intents">Discover</Link>
-            <Link href="/messages" aria-current="page">
-              Messages
-            </Link>
-            <NotificationBell />
-          </nav>
-        </div>
-      </header>
-
       <section className="section">
         <Link href="/messages" className="back-link">
           ← All messages
@@ -196,6 +183,7 @@ export default async function ConversationPage({
             {messages.length === 0 ? (
               <div className="empty-state">
                 <h2>Start the conversation</h2>
+
                 <p className="muted">
                   Send a message to begin discussing your shared
                   interests or intention.
@@ -211,7 +199,7 @@ export default async function ConversationPage({
                   : profiles.find(
                       (profile) =>
                         profile.id === message.sender_id
-                    )?.full_name || "RuffNeck member";
+                    )?.full_name?.trim() || "RuffNeck member";
 
                 return (
                   <article
