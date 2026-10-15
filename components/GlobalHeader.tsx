@@ -3,12 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 
 export default function GlobalHeader() {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  // Keep the login and authentication callback screens separate.
+  // Hide the shared navigation on authentication pages.
   if (
     pathname === "/login" ||
     pathname.startsWith("/auth/")
@@ -18,14 +20,18 @@ export default function GlobalHeader() {
 
   const isPublicHome = pathname === "/";
 
+  function closeMenu() {
+    setMenuOpen(false);
+  }
+
   return (
     <header className="site-header">
-      <div className="container site-header-inner">
-        {/* Brand identity */}
+      <div className="container global-header-inner">
         <Link
           href={isPublicHome ? "/" : "/home"}
           className="brand"
           aria-label="RuffNeck Connect home"
+          onClick={closeMenu}
         >
           <Image
             src="/ruffneck-connect-symbol.png"
@@ -42,57 +48,79 @@ export default function GlobalHeader() {
           </span>
         </Link>
 
-        {/* Public navigation */}
-        {isPublicHome ? (
-          <nav
-            className="site-nav"
-            aria-label="Main navigation"
-          >
-            <a href="#how-it-works">How it works</a>
+        <button
+          type="button"
+          className="global-nav-toggle"
+          aria-label={
+            menuOpen ? "Close navigation" : "Open navigation"
+          }
+          aria-expanded={menuOpen}
+          aria-controls="ruffneck-main-navigation"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
 
-            <a href="#features">Features</a>
+        <nav
+          id="ruffneck-main-navigation"
+          className={`global-nav${menuOpen ? " is-open" : ""}`}
+          aria-label="Main navigation"
+        >
+          {isPublicHome ? (
+            <>
+              <a href="#how-it-works" onClick={closeMenu}>
+                How it works
+              </a>
 
-            <Link href="/login">Sign in</Link>
+              <a href="#features" onClick={closeMenu}>
+                Features
+              </a>
 
-            <Link href="/login" className="button">
-              Get started
-            </Link>
-          </nav>
-        ) : (
-          /* Application navigation */
-          <nav
-            className="site-nav"
-            aria-label="Application navigation"
-          >
-            <Link href="/home">Home</Link>
+              <Link href="/login" onClick={closeMenu}>
+                Sign in
+              </Link>
 
-            <Link href="/communities">
-              Communities
-            </Link>
-
-            <Link href="/intents">
-              Discover
-            </Link>
-
-            <Link href="/messages">
-              Messages
-            </Link>
-
-            <NotificationBell />
-
-            <form
-              action="/auth/signout"
-              method="post"
-            >
-              <button
-                type="submit"
-                className="button button-secondary"
+              <Link
+                href="/login"
+                className="button"
+                onClick={closeMenu}
               >
-                Sign out
-              </button>
-            </form>
-          </nav>
-        )}
+                Get started
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/home" onClick={closeMenu}>
+                Home
+              </Link>
+
+              <Link href="/communities" onClick={closeMenu}>
+                Communities
+              </Link>
+
+              <Link href="/intents" onClick={closeMenu}>
+                Discover
+              </Link>
+
+              <Link href="/messages" onClick={closeMenu}>
+                Messages
+              </Link>
+
+              <NotificationBell />
+
+              <form action="/auth/signout" method="post">
+                <button
+                  type="submit"
+                  className="button-secondary"
+                >
+                  Sign out
+                </button>
+              </form>
+            </>
+          )}
+        </nav>
       </div>
     </header>
   );
