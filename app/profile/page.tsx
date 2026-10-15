@@ -84,7 +84,7 @@ const errorMessages: Record<string, string> = {
   phone: "Your phone number must not exceed 30 characters.",
   locale: "Your preferred language must not exceed 80 characters.",
   avatar: "Enter a valid photo URL beginning with HTTP or HTTPS.",
-  privacy: "Choose whether your profile should appear in the member directory.",
+  privacy: "Choose a valid member directory privacy setting.",
   save: "Your profile could not be saved. Please try again.",
 };
 
@@ -135,6 +135,7 @@ export default async function ProfilePage({ searchParams }: PageProps) {
 
   const fullName = profile?.full_name?.trim() || authName;
   const avatarUrl = getAvatarDisplayUrl(profile?.avatar_url ?? null);
+  const showInDirectory = profile?.show_in_directory ?? true;
 
   const completionItems = [
     Boolean(fullName),
@@ -226,8 +227,6 @@ export default async function ProfilePage({ searchParams }: PageProps) {
 
     redirect("/profile?saved=1");
   }
-
-  const showInDirectory = profile?.show_in_directory ?? true;
 
   return (
     <main className="profile-page">
@@ -453,12 +452,6 @@ export default async function ProfilePage({ searchParams }: PageProps) {
                   Hide my profile from the member directory
                 </option>
               </select>
-
-              <span className="form-help">
-                Hiding your profile should also prevent access through
-                the public member-profile route once the directory RPC
-                privacy filters are installed.
-              </span>
             </div>
 
             <div className="profile-form-actions">
@@ -471,6 +464,79 @@ export default async function ProfilePage({ searchParams }: PageProps) {
               </Link>
             </div>
           </form>
+        </section>
+
+        <section className="card" style={{ marginTop: 28 }}>
+          <div className="profile-editor-heading">
+            <p className="eyebrow">MEMBER VIEW</p>
+            <h2>Profile preview</h2>
+            <p>
+              Preview of your saved information as it may appear to
+              other members. Unsaved form changes will not appear here.
+            </p>
+          </div>
+
+          {!showInDirectory ? (
+            <div className="alert" role="status">
+              <strong>Your profile is hidden.</strong>
+              <p>
+                Other members should not be able to find your profile
+                through the member directory while this setting is off.
+              </p>
+            </div>
+          ) : (
+            <article
+              className="profile-identity"
+              style={{
+                alignItems: "flex-start",
+                padding: 20,
+                border: "1px solid var(--border, #d9e1ec)",
+                borderRadius: 12,
+              }}
+            >
+              {avatarUrl ? (
+                <Image
+                  src={avatarUrl}
+                  alt={`${fullName || "Member"} profile photo`}
+                  width={88}
+                  height={88}
+                  unoptimized
+                  className="profile-avatar"
+                />
+              ) : (
+                <div className="profile-avatar profile-avatar-fallback">
+                  {getInitials(fullName)}
+                </div>
+              )}
+
+              <div className="profile-identity-copy">
+                <h3>{fullName || "RuffNeck member"}</h3>
+
+                {profile?.locale && (
+                  <p className="muted">
+                    {profile.locale === "en"
+                      ? "English"
+                      : profile.locale === "ha"
+                        ? "Hausa"
+                        : profile.locale === "yo"
+                          ? "Yoruba"
+                          : profile.locale === "ig"
+                            ? "Igbo"
+                            : profile.locale}
+                  </p>
+                )}
+
+                <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
+                  {profile?.bio?.trim() ||
+                    "You have not added a biography yet."}
+                </p>
+
+                <Link href="/members" className="text-link">
+                  Browse member directory →
+                </Link>
+              </div>
+            </article>
+          )}
         </section>
 
         <section className="profile-shortcuts">
