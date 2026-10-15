@@ -6,22 +6,22 @@ export async function middleware(request: NextRequest) {
     request,
   });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return response;
-  }
-
   const supabase = createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+
+        setAll(
+          cookiesToSet: {
+            name: string;
+            value: string;
+            options?: Record<string, unknown>;
+          }[]
+        ) {
           cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value);
           });
@@ -31,13 +31,18 @@ export async function middleware(request: NextRequest) {
           });
 
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
+            response.cookies.set(
+              name,
+              value,
+              options as Parameters<typeof response.cookies.set>[2]
+            );
           });
         },
       },
     }
   );
 
+  // Refresh the authentication session when necessary.
   await supabase.auth.getUser();
 
   return response;
