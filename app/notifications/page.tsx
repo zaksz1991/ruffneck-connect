@@ -15,6 +15,16 @@ type Notification = {
   read_at: string | null;
 };
 
+type NotificationsResponse = {
+  notifications?: Notification[];
+  unread_count?: number;
+  error?: string;
+};
+
+type UpdateResponse = {
+  error?: string;
+};
+
 function isSafeInternalLink(link: string | null): link is string {
   if (
     !link ||
@@ -27,18 +37,39 @@ function isSafeInternalLink(link: string | null): link is string {
   }
 
   try {
-    const url = new URL(link, "https://ruffneck-connect.invalid");
+    const baseUrl = "https://ruffneck-connect.invalid";
+    const url = new URL(link, baseUrl);
 
-    if (url.origin !== "https://ruffneck-connect.invalid") {
+    if (url.origin !== baseUrl) {
       return false;
     }
 
-    return /^\/(home|communities(?:\/[a-zA-Z0-9_-]+)?|intents(?:\/[a-f0-9-]+)?|messages(?:\/[a-f0-9-]+)?|notifications)\/?$/i.test(
+    return /^\/(?:home|communities(?:\/[a-zA-Z0-9_-]+)?|intents(?:\/[a-f0-9-]+)?|messages(?:\/[a-f0-9-]+)?|notifications)\/?$/i.test(
       url.pathname
     );
   } catch {
     return false;
   }
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Date unavailable";
+  }
+
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatType(value: string): string {
+  return value
+    .replaceAll("_", " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export default function NotificationsPage() {
@@ -65,7 +96,8 @@ export default function NotificationsPage() {
         },
       });
 
-      const result = await response.json();
+      const result =
+        (await response.json()) as NotificationsResponse;
 
       if (!response.ok) {
         throw new Error(
@@ -136,11 +168,15 @@ export default function NotificationsPage() {
       const previousUnreadCount = unreadCount;
 
       if (notificationId) {
-        setUpdatingIds((current) => [...current, notificationId]);
+        setUpdatingIds((current) => [
+          ...current,
+          notificationId,
+        ]);
       } else {
         setMarkingAll(true);
       }
 
+      // Optimistically update the interface.
       setNotifications((current) =>
         current.map((notification) => {
           if (
@@ -188,7 +224,8 @@ export default function NotificationsPage() {
           ),
         });
 
-        const result = await response.json();
+        const result =
+          (await response.json()) as UpdateResponse;
 
         if (!response.ok) {
           throw new Error(
@@ -235,33 +272,15 @@ export default function NotificationsPage() {
     ]
   );
 
-  function formatDate(value: string) {
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      return "Date unavailable";
-    }
-
-    return new Intl.DateTimeFormat("en-NG", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(date);
-  }
-
-  function formatType(value: string) {
-    return value
-      .replaceAll("_", " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
   return (
     <main className="page-shell">
       <section className="section">
         <div className="section-heading">
           <div>
-            <p className="muted">RUFFNECK CONNECT</p>
+            <p className="eyebrow">RUFFNECK CONNECT</p>
+
             <h1>Notifications</h1>
+
             <p className="muted">
               Updates about your communities, interests, and conversations.
             </p>
@@ -284,7 +303,11 @@ export default function NotificationsPage() {
         )}
 
         {error && (
-          <div className="empty-state" role="alert">
+          <div
+            className="empty-state"
+            role="alert"
+            style={{ marginTop: 20 }}
+          >
             <p>{error}</p>
 
             <button
@@ -299,7 +322,12 @@ export default function NotificationsPage() {
         )}
 
         {success && (
-          <p role="status" aria-live="polite" className="muted">
+          <p
+            role="status"
+            aria-live="polite"
+            className="muted"
+            style={{ marginTop: 16 }}
+          >
             {success}
           </p>
         )}
@@ -317,8 +345,9 @@ export default function NotificationsPage() {
           <div className="grid-2">
             {notifications.map((notification) => {
               const isUpdating = updatingIds.includes(notification.id);
-              const safeLink = isSafeInternalLink(notification.link);
-              const notificationLink = safeLink
+              const notificationLink = isSafeInternalLink(
+                notification.link
+              )
                 ? notification.link
                 : null;
 
@@ -345,7 +374,9 @@ export default function NotificationsPage() {
 
                   <h2>{notification.title}</h2>
 
-                  {notification.body && <p>{notification.body}</p>}
+                  {notification.body && (
+                    <p>{notification.body}</p>
+                  )}
 
                   <p className="muted">
                     {formatDate(notification.created_at)}
@@ -355,8 +386,8 @@ export default function NotificationsPage() {
                     style={{
                       display: "flex",
                       flexWrap: "wrap",
-                      gap: "10px",
-                      marginTop: "12px",
+                      gap: 10,
+                      marginTop: 12,
                     }}
                   >
                     {notificationLink && (
@@ -370,7 +401,9 @@ export default function NotificationsPage() {
 
                           event.preventDefault();
 
-                          const marked = await markAsRead(notification.id);
+                          const marked = await markAsRead(
+                            notification.id
+                          );
 
                           if (marked) {
                             window.location.assign(notificationLink);
@@ -390,7 +423,9 @@ export default function NotificationsPage() {
                           void markAsRead(notification.id)
                         }
                       >
-                        {isUpdating ? "Updating..." : "Mark as read"}
+                        {isUpdating
+                          ? "Updating..."
+                          : "Mark as read"}
                       </button>
                     )}
                   </div>

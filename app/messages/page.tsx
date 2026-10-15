@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import NotificationBell from "@/components/NotificationBell";
 
 export const dynamic = "force-dynamic";
 
@@ -208,137 +207,124 @@ export default async function MessagesPage() {
   );
 
   return (
-    <>
-      <header className="site-header">
-        <div className="container site-header-inner">
-          <Link href="/home" className="brand">
-            <span className="brand-mark">RN</span>
-            <span>RuffNeck Connect</span>
-          </Link>
+    <main className="page-shell">
+      <section className="section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">PRIVATE COMMUNICATION</p>
 
-          <nav className="site-nav" aria-label="Main navigation">
-            <Link href="/home">Home</Link>
-            <Link href="/communities">Communities</Link>
-            <Link href="/intents">Discover</Link>
-            <Link href="/messages">Messages</Link>
-            <NotificationBell />
-          </nav>
-        </div>
-      </header>
+            <h1>Messages</h1>
 
-      <main className="page-shell">
-        <section className="section">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">PRIVATE COMMUNICATION</p>
-              <h1>Messages</h1>
-              <p className="muted">
-                Continue conversations with people in your communities
-                and around shared intentions.
-              </p>
-            </div>
-
-            <Link
-              href="/communities"
-              className="button button-secondary"
-            >
-              Explore communities
-            </Link>
+            <p className="muted">
+              Continue conversations with people in your communities
+              and around shared intentions.
+            </p>
           </div>
 
-          {conversations.length === 0 ? (
-            <div className="feature-card empty-state">
-              <h2>No conversations yet</h2>
+          <Link
+            href="/communities"
+            className="button button-secondary"
+          >
+            Explore communities
+          </Link>
+        </div>
 
-              <p className="muted">
-                Join a community to connect with members. You can also
-                respond to an open intention to begin a conversation
-                through a shared purpose.
-              </p>
+        {conversations.length === 0 ? (
+          <div className="feature-card empty-state">
+            <h2>No conversations yet</h2>
 
-              <div className="button-row">
-                <Link
-                  href="/communities"
-                  className="button button-primary"
-                >
-                  Find communities
-                </Link>
+            <p className="muted">
+              Join a community to connect with members. You can also
+              respond to an open intention to begin a conversation
+              through a shared purpose.
+            </p>
 
-                <Link
-                  href="/intents"
-                  className="button button-secondary"
-                >
-                  Discover intentions
-                </Link>
-              </div>
+            <div className="button-row">
+              <Link
+                href="/communities"
+                className="button button-primary"
+              >
+                Find communities
+              </Link>
+
+              <Link
+                href="/intents"
+                className="button button-secondary"
+              >
+                Discover intentions
+              </Link>
             </div>
-          ) : (
-            <div className="conversation-list">
-              {conversations.map((conversation) => {
-                const otherIds =
-                  otherParticipantIds.get(conversation.id) ?? [];
+          </div>
+        ) : (
+          <div className="conversation-list">
+            {conversations.map((conversation) => {
+              const otherIds =
+                otherParticipantIds.get(conversation.id) ?? [];
 
-                const conversationName =
-                  conversation.conversation_type === "intent"
-                    ? conversation.title || "Intent conversation"
-                    : otherIds
-                        .map(
-                          (id) =>
-                            profileNames.get(id) ??
-                            "RuffNeck member"
-                        )
-                        .join(", ") || "Direct conversation";
+              const conversationName =
+                conversation.conversation_type === "intent"
+                  ? conversation.title || "Intent conversation"
+                  : otherIds
+                      .map(
+                        (id) =>
+                          profileNames.get(id) ??
+                          "RuffNeck member"
+                      )
+                      .join(", ") || "Direct conversation";
 
-                const latestMessage =
-                  latestMessageByConversation.get(conversation.id);
+              const latestMessage =
+                latestMessageByConversation.get(conversation.id);
 
-                const preview = latestMessage
-                  ? `${latestMessage.sender_id === user.id ? "You: " : ""}${latestMessage.body}`
-                  : "No messages yet. Start the conversation.";
+              const preview = latestMessage
+                ? `${
+                    latestMessage.sender_id === user.id
+                      ? "You: "
+                      : ""
+                  }${latestMessage.body}`
+                : "No messages yet. Start the conversation.";
 
-                return (
-                  <Link
-                    key={conversation.id}
-                    href={`/messages/${conversation.id}`}
-                    className="conversation-card"
+              return (
+                <Link
+                  key={conversation.id}
+                  href={`/messages/${conversation.id}`}
+                  className="conversation-card"
+                >
+                  <div
+                    className="conversation-avatar"
+                    aria-hidden="true"
                   >
-                    <div
-                      className="conversation-avatar"
-                      aria-hidden="true"
-                    >
-                      {conversationName.charAt(0).toUpperCase()}
-                    </div>
+                    {conversationName.charAt(0).toUpperCase()}
+                  </div>
 
-                    <div className="conversation-content">
-                      <div className="conversation-heading">
-                        <h2>{conversationName}</h2>
+                  <div className="conversation-content">
+                    <div className="conversation-heading">
+                      <h2>{conversationName}</h2>
 
-                        <span className="conversation-type">
-                          {conversation.conversation_type === "intent"
-                            ? "Intent"
-                            : "Direct"}
-                        </span>
-                      </div>
-
-                      <p className="conversation-preview">
-                        {preview.length > 180
-                          ? `${preview.slice(0, 180).trim()}…`
-                          : preview}
-                      </p>
-
-                      <span className="conversation-date">
-                        {latestMessage
-                          ? formatDate(latestMessage.created_at)
-                          : `Created ${formatDate(conversation.created_at)}`}
+                      <span className="conversation-type">
+                        {conversation.conversation_type === "intent"
+                          ? "Intent"
+                          : "Direct"}
                       </span>
                     </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </main>
-    </>
+
+                    <p className="conversation-preview">
+                      {preview.length > 180
+                        ? `${preview.slice(0, 180).trim()}…`
+                        : preview}
+                    </p>
+
+                    <span className="conversation-date">
+                      {latestMessage
+                        ? formatDate(latestMessage.created_at)
+                        : `Created ${formatDate(conversation.created_at)}`}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }
