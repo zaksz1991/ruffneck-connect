@@ -96,6 +96,10 @@ export default function GlobalHeader() {
                 Home
               </Link>
 
+              <Link href="/profile" onClick={closeMenu}>
+                My Profile
+              </Link>
+
               <Link href="/communities" onClick={closeMenu}>
                 Communities
               </Link>
