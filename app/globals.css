@@ -1105,3 +1105,77 @@ button:hover:not(:disabled),
     padding: 32px 20px;
   }
 }
+
+/* =========================================
+   RUFFNECK CONNECT — TEXT CONTRAST FIX
+========================================= */
+
+:root {
+  --text: #14263e;
+  --muted: #475569;
+}
+
+/* Main navigation */
+.site-nav a {
+  color: #243750;
+  font-weight: 700;
+}
+
+/* Page descriptions */
+.page-heading p,
+.feature-card p,
+.stat-card span,
+.form-help,
+.empty-state p {
+  color: #475569;
+}
+
+/* Labels and section headings */
+.eyebrow {
+  color: #00758d;
+}
+
+/* Footer text */
+.site-footer {
+  color: #475569;
+}
+
+/* Links */
+.text-link {
+  color: #00758d;
+  font-weight: 700;
+}
+
+.text-link:hover {
+  color: #00566b;
+}
+
+/* Conversation previews */
+.conversation-preview {
+  color: #475569;
+}
+
+.conversation-date {
+  color: #526174;
+}
+
+/* Message metadata */
+.message-sender {
+  opacity: 1;
+}
+
+.message-bubble time {
+  color: #526174;
+  opacity: 1;
+}
+
+/* Form helper text */
+.form-help {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Disabled controls should remain readable */
+button:disabled {
+  opacity: 0.8;
+}
