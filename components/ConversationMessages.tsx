@@ -162,6 +162,9 @@ export default function ConversationMessages({
   } | null>(null);
   const shouldAutoScroll = useRef(true);
   const reactionOverrides = useRef(new Map<string, MessageReaction | null>());
+  // Shared between Realtime callbacks and explicit edit/delete actions so a
+  // stale initial snapshot cannot overwrite a newer local change.
+  const liveOverridesRef = useRef(new Map<string, Message | null>());
   const visibleMessageIds = useMemo(
     () => messages.map((message) => message.id),
     [messages]
@@ -261,7 +264,8 @@ export default function ConversationMessages({
 
     // Records received after subscribing take precedence over the first
     // snapshot, covering changes that happen while that snapshot is loading.
-    const liveOverrides = new Map<string, Message | null>();
+    const liveOverrides = liveOverridesRef.current;
+    liveOverrides.clear();
 
     async function refreshMessages() {
       const { data, error: loadError } = await supabase
@@ -614,7 +618,7 @@ export default function ConversationMessages({
       }
 
       const updatedMessage = result.message as Message;
-      liveOverrides.set(updatedMessage.id, updatedMessage);
+      liveOverridesRef.current.set(updatedMessage.id, updatedMessage);
       const updatedReplySource: ReplyPreview = {
         id: updatedMessage.id,
         sender_id: updatedMessage.sender_id,
@@ -667,7 +671,7 @@ export default function ConversationMessages({
         throw new Error(result.error || "Unable to delete this message.");
       }
 
-      liveOverrides.set(messageId, null);
+      liveOverridesRef.current.set(messageId, null);
       const deletedTarget = messages.find((message) => message.id === messageId);
       if (replyingTo?.id === messageId) setReplyingTo(null);
       setMessages((current) =>
