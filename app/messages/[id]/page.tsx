@@ -15,6 +15,13 @@ type ConversationParticipantProfile = {
   avatar_url: string | null;
 };
 
+type ReplyPreview = {
+  id: string;
+  sender_id: string;
+  body: string;
+  deleted_at: string | null;
+};
+
 type Message = {
   id: string;
   conversation_id: string;
@@ -23,6 +30,8 @@ type Message = {
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
+  reply_to_message_id: string | null;
+  reply_to?: ReplyPreview | null;
 };
 
 type Conversation = {
@@ -132,7 +141,7 @@ export default async function ConversationPage({
   } = await supabase
     .from("messages")
     .select(
-      "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at"
+      "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
     )
     .eq("conversation_id", id)
     .is("deleted_at", null)

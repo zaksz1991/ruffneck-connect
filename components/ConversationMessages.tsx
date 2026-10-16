@@ -10,6 +10,13 @@ type ConversationParticipantProfile = {
   avatar_url: string | null;
 };
 
+type ReplyPreview = {
+  id: string;
+  sender_id: string;
+  body: string;
+  deleted_at: string | null;
+};
+
 type Message = {
   id: string;
   conversation_id: string;
@@ -18,6 +25,8 @@ type Message = {
   created_at: string;
   edited_at?: string | null;
   deleted_at?: string | null;
+  reply_to_message_id?: string | null;
+  reply_to?: ReplyPreview | null;
 };
 
 type MessageReaction = {
@@ -111,6 +120,9 @@ export default function ConversationMessages({
     sortAndLimit(initialMessages)
   );
   const [draft, setDraft] = useState("");
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const replyingToRef = useRef<Message | null>(null);
+  replyingToRef.current = replyingTo;
   const [sending, setSending] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -156,6 +168,28 @@ export default function ConversationMessages({
 
   function getReactionRowKey(reaction: Pick<MessageReaction, "message_id" | "user_id" | "emoji">) {
     return JSON.stringify([reaction.message_id, reaction.user_id, reaction.emoji]);
+  }
+
+  async function hydrateReplyPreview(message: Message): Promise<Message> {
+    if (!message.reply_to_message_id || message.reply_to) return message;
+
+    const { data, error: replyError } = await supabase
+      .from("messages")
+      .select("id, sender_id, body, deleted_at")
+      .eq("id", message.reply_to_message_id)
+      .maybeSingle();
+
+    if (replyError || !data) return message;
+    return { ...message, reply_to: data as ReplyPreview };
+  }
+
+  function beginReply(message: Message) {
+    if (message.deleted_at || deletingMessageId) return;
+    setError("");
+    setReplyingTo(message);
+    window.setTimeout(() => {
+      document.getElementById("message-body")?.focus();
+    }, 0);
   }
 
   useEffect(() => {
@@ -217,7 +251,7 @@ export default function ConversationMessages({
       const { data, error: loadError } = await supabase
         .from("messages")
         .select(
-          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at"
+          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
         )
         .eq("conversation_id", conversationId)
         .is("deleted_at", null)
@@ -312,6 +346,13 @@ export default function ConversationMessages({
 
           liveOverrides.set(incoming.id, incoming);
           setMessages((current) => mergeMessages(current, [incoming]));
+          if (incoming.reply_to_message_id) {
+            void hydrateReplyPreview(incoming).then((hydrated) => {
+              if (disposed) return;
+              liveOverrides.set(hydrated.id, hydrated);
+              setMessages((current) => mergeMessages(current, [hydrated]));
+            });
+          }
           if (incoming.sender_id !== currentUserId) {
             void markConversationRead();
           }
@@ -331,8 +372,23 @@ export default function ConversationMessages({
 
           if (updated.deleted_at) {
             liveOverrides.set(updated.id, null);
+            if (replyingToRef.current?.id === updated.id) {
+              setReplyingTo(null);
+            }
+            const deletedTarget: ReplyPreview = {
+              id: updated.id,
+              sender_id: updated.sender_id,
+              body: updated.body,
+              deleted_at: updated.deleted_at,
+            };
             setMessages((current) =>
-              current.filter((message) => message.id !== updated.id)
+              current
+                .filter((message) => message.id !== updated.id)
+                .map((message) =>
+                  message.reply_to_message_id === updated.id
+                    ? { ...message, reply_to: deletedTarget }
+                    : message
+                )
             );
             setReactionRows((current) =>
               current.filter((reaction) => reaction.message_id !== updated.id)
@@ -341,7 +397,22 @@ export default function ConversationMessages({
           }
 
           liveOverrides.set(updated.id, updated);
-          setMessages((current) => mergeMessages(current, [updated]));
+          const updatedReplySource: ReplyPreview = {
+            id: updated.id,
+            sender_id: updated.sender_id,
+            body: updated.body,
+            deleted_at: updated.deleted_at ?? null,
+          };
+          setMessages((current) =>
+            mergeMessages(
+              current.map((message) =>
+                message.reply_to_message_id === updated.id
+                  ? { ...message, reply_to: updatedReplySource }
+                  : message
+              ),
+              [updated]
+            )
+          );
         }
       )
       .on(
@@ -445,7 +516,7 @@ export default function ConversationMessages({
       const { data, error: historyError } = await supabase
         .from("messages")
         .select(
-          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at"
+          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
         )
         .eq("conversation_id", conversationId)
         .is("deleted_at", null)
@@ -526,8 +597,24 @@ export default function ConversationMessages({
         throw new Error(result.error || "Unable to edit this message.");
       }
 
-      liveOverrides.set(result.message.id, result.message);
-      setMessages((current) => mergeMessages(current, [result.message as Message]));
+      const updatedMessage = result.message as Message;
+      liveOverrides.set(updatedMessage.id, updatedMessage);
+      const updatedReplySource: ReplyPreview = {
+        id: updatedMessage.id,
+        sender_id: updatedMessage.sender_id,
+        body: updatedMessage.body,
+        deleted_at: updatedMessage.deleted_at ?? null,
+      };
+      setMessages((current) =>
+        mergeMessages(
+          current.map((message) =>
+            message.reply_to_message_id === updatedMessage.id
+              ? { ...message, reply_to: updatedReplySource }
+              : message
+          ),
+          [updatedMessage]
+        )
+      );
       setEditingMessageId(null);
       setEditDraft("");
     } catch (editError) {
@@ -565,8 +652,24 @@ export default function ConversationMessages({
       }
 
       liveOverrides.set(messageId, null);
+      const deletedTarget = messages.find((message) => message.id === messageId);
+      if (replyingTo?.id === messageId) setReplyingTo(null);
       setMessages((current) =>
-        current.filter((message) => message.id !== messageId)
+        current
+          .filter((message) => message.id !== messageId)
+          .map((message) =>
+            message.reply_to_message_id === messageId && deletedTarget
+              ? {
+                  ...message,
+                  reply_to: {
+                    id: deletedTarget.id,
+                    sender_id: deletedTarget.sender_id,
+                    body: deletedTarget.body,
+                    deleted_at: new Date().toISOString(),
+                  },
+                }
+              : message
+          )
       );
 
       if (editingMessageId === messageId) cancelEdit();
@@ -661,7 +764,10 @@ export default function ConversationMessages({
       const response = await fetch(`/api/messages/${conversationId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body }),
+        body: JSON.stringify({
+          body,
+          replyToMessageId: replyingTo?.id ?? null,
+        }),
       });
 
       const result = (await response.json()) as SendResponse;
@@ -673,8 +779,10 @@ export default function ConversationMessages({
       // Realtime and the HTTP response can race; merge by message ID to avoid
       // displaying the same message twice.
       shouldAutoScroll.current = true;
-      setMessages((current) => mergeMessages(current, [result.message as Message]));
+      const messageWithReply = await hydrateReplyPreview(result.message as Message);
+      setMessages((current) => mergeMessages(current, [messageWithReply]));
       setDraft("");
+      setReplyingTo(null);
     } catch (sendError) {
       setError(
         sendError instanceof Error
@@ -729,6 +837,16 @@ export default function ConversationMessages({
               : participants.find(
                   (participant) => participant.user_id === message.sender_id
                 )?.full_name?.trim() || "RuffNeck member";
+            const replyTarget = message.reply_to_message_id
+              ? messages.find((item) => item.id === message.reply_to_message_id) ?? message.reply_to ?? null
+              : null;
+            const replyTargetName = !replyTarget
+              ? "Original message"
+              : replyTarget.sender_id === currentUserId
+                ? "You"
+                : participants.find(
+                    (participant) => participant.user_id === replyTarget.sender_id
+                  )?.full_name?.trim() || "RuffNeck member";
 
             return (
               <article
@@ -738,6 +856,35 @@ export default function ConversationMessages({
                 }`}
               >
                 <span className="message-sender">{senderName}</span>
+                {message.reply_to_message_id && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      marginBottom: 8,
+                      padding: "8px 10px",
+                      borderLeft: "3px solid var(--cyan, #00b4d8)",
+                      borderRadius: "0 8px 8px 0",
+                      background: "rgba(0,180,216,0.08)",
+                      maxWidth: "100%",
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 3 }}>
+                      Replying to {replyTargetName}
+                    </div>
+                    <div
+                      className="muted"
+                      style={{ fontSize: 12, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}
+                    >
+                      {replyTarget?.deleted_at
+                        ? "Original message was deleted"
+                        : replyTarget?.body
+                          ? replyTarget.body.length > 180
+                            ? `${replyTarget.body.slice(0, 177)}…`
+                            : replyTarget.body
+                          : "Original message is unavailable"}
+                    </div>
+                  </div>
+                )}
                 {editingMessageId === message.id ? (
                   <form onSubmit={saveEdit} style={{ marginTop: 8 }}>
                     <label
@@ -833,10 +980,11 @@ export default function ConversationMessages({
                     );
                   })}
                 </div>
-                {isOwnMessage && editingMessageId !== message.id && (
+                {editingMessageId !== message.id && (
                   <div
                     style={{
                       display: "flex",
+                      flexWrap: "wrap",
                       justifyContent: "flex-end",
                       gap: 8,
                       marginTop: 8,
@@ -845,21 +993,34 @@ export default function ConversationMessages({
                     <button
                       type="button"
                       className="button-secondary"
-                      onClick={() => beginEdit(message)}
-                      disabled={Boolean(deletingMessageId) || savingEdit}
+                      onClick={() => beginReply(message)}
+                      disabled={Boolean(deletingMessageId) || message.deleted_at != null}
                       style={{ padding: "5px 10px", fontSize: 12 }}
                     >
-                      Edit
+                      Reply
                     </button>
-                    <button
-                      type="button"
-                      className="button-secondary"
-                      onClick={() => void deleteMessage(message.id)}
-                      disabled={Boolean(deletingMessageId) || savingEdit}
-                      style={{ padding: "5px 10px", fontSize: 12 }}
-                    >
-                      {deletingMessageId === message.id ? "Deleting…" : "Delete"}
-                    </button>
+                    {isOwnMessage && (
+                      <>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => beginEdit(message)}
+                          disabled={Boolean(deletingMessageId) || savingEdit}
+                          style={{ padding: "5px 10px", fontSize: 12 }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => void deleteMessage(message.id)}
+                          disabled={Boolean(deletingMessageId) || savingEdit}
+                          style={{ padding: "5px 10px", fontSize: 12 }}
+                        >
+                          {deletingMessageId === message.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </article>
@@ -880,6 +1041,48 @@ export default function ConversationMessages({
       )}
 
       <form onSubmit={handleSubmit} className="message-compose">
+        {replyingTo && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 12,
+              padding: 10,
+              border: "1px solid var(--border, #d1d5db)",
+              borderLeft: "3px solid var(--cyan, #00b4d8)",
+              borderRadius: 8,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <strong style={{ fontSize: 12 }}>
+                Replying to {replyingTo.sender_id === currentUserId
+                  ? "your message"
+                  : participants.find((participant) => participant.user_id === replyingTo.sender_id)?.full_name?.trim() || "RuffNeck member"}
+              </strong>
+              <p
+                className="muted"
+                style={{ margin: "4px 0 0", fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+              >
+                {replyingTo.body.length > 180
+                  ? `${replyingTo.body.slice(0, 177)}…`
+                  : replyingTo.body}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="button-secondary"
+              aria-label="Cancel reply"
+              title="Cancel reply"
+              onClick={() => setReplyingTo(null)}
+              disabled={sending}
+              style={{ padding: "2px 8px", lineHeight: 1.5 }}
+            >
+              ×
+            </button>
+          </div>
+        )}
         <label htmlFor="message-body">Your message</label>
         <textarea
           id="message-body"

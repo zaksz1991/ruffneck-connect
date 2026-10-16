@@ -104,7 +104,7 @@ export async function PATCH(
     .eq("sender_id", user.id)
     .is("deleted_at", null)
     .select(
-      "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at"
+      "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id"
     )
     .maybeSingle();
 

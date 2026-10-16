@@ -48,19 +48,21 @@ export async function POST(
   const contentType = request.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
   let body: unknown;
+  let rawReplyToMessageId: unknown = null;
 
   try {
     if (isJson) {
       const payload: unknown = await request.json();
-      body =
-        typeof payload === "object" &&
-        payload !== null &&
-        "body" in payload
-          ? payload.body
-          : undefined;
+      if (typeof payload === "object" && payload !== null) {
+        body = "body" in payload ? payload.body : undefined;
+        rawReplyToMessageId = "replyToMessageId" in payload
+          ? payload.replyToMessageId
+          : null;
+      }
     } else {
       const formData = await request.formData();
       body = formData.get("body");
+      rawReplyToMessageId = formData.get("replyToMessageId");
     }
   } catch {
     return NextResponse.json(
@@ -107,14 +109,56 @@ export async function POST(
     );
   }
 
+  let replyToMessageId: string | null = null;
+
+  if (
+    rawReplyToMessageId !== null &&
+    rawReplyToMessageId !== undefined &&
+    rawReplyToMessageId !== ""
+  ) {
+    if (
+      typeof rawReplyToMessageId !== "string" ||
+      !UUID_REGEX.test(rawReplyToMessageId)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid reply target." },
+        { status: 400 }
+      );
+    }
+
+    // Do not disclose whether a message exists in a different conversation.
+    const { data: parentMessage, error: parentError } = await supabase
+      .from("messages")
+      .select("id, conversation_id, deleted_at")
+      .eq("id", rawReplyToMessageId)
+      .maybeSingle();
+
+    if (
+      parentError ||
+      !parentMessage ||
+      parentMessage.conversation_id !== id ||
+      parentMessage.deleted_at !== null
+    ) {
+      return NextResponse.json(
+        { error: "Choose an available message in this conversation to reply to." },
+        { status: 400 }
+      );
+    }
+
+    replyToMessageId = parentMessage.id;
+  }
+
   const { data: message, error: insertError } = await supabase
     .from("messages")
     .insert({
       conversation_id: id,
       sender_id: user.id,
       body: messageBody,
+      ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
     })
-    .select("id, conversation_id, sender_id, body, created_at")
+    .select(
+      "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id"
+    )
     .single();
 
   if (insertError || !message) {
