@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import ConversationMessages from "@/components/ConversationMessages";
 
 export const dynamic = "force-dynamic";
 
@@ -93,8 +94,8 @@ export default async function ConversationPage({
     notFound();
   }
 
-  // Only this membership-checked RPC may reveal other participants' names
-  // and avatars; direct table reads are intentionally limited by RLS.
+  // Use the membership-checked RPC to reveal only participant IDs, names,
+  // and avatar URLs. Direct reads of other membership rows remain restricted.
   const {
     data: participantRows,
     error: participantProfilesError,
@@ -161,96 +162,35 @@ export default async function ConversationPage({
                 ? "INTENT CONVERSATION"
                 : "PRIVATE CONVERSATION"}
             </p>
-
             <h1>{conversationTitle}</h1>
             <p className="muted">
-              Messages are visible to active participants in this
-              conversation.
+              Messages are visible to active participants in this conversation.
             </p>
           </div>
-        </div>
-
-        <div className="message-panel">
-          <div className="message-list" aria-live="polite">
-            {messages.length === 0 ? (
-              <div className="empty-state">
-                <h2>Start the conversation</h2>
-                <p className="muted">
-                  Send a message to begin discussing your shared
-                  interests or intention.
-                </p>
-              </div>
-            ) : (
-              messages.map((message) => {
-                const isOwnMessage =
-                  message.sender_id === user.id;
-                const senderName = isOwnMessage
-                  ? "You"
-                  : participants.find(
-                      (participant) =>
-                        participant.user_id === message.sender_id
-                    )?.full_name?.trim() || "RuffNeck member";
-
-                return (
-                  <article
-                    key={message.id}
-                    className={`message-bubble ${
-                      isOwnMessage
-                        ? "message-own"
-                        : "message-other"
-                    }`}
-                  >
-                    <span className="message-sender">
-                      {senderName}
-                    </span>
-
-                    <p>{message.body}</p>
-                    <time dateTime={message.created_at}>
-                      {new Date(
-                        message.created_at
-                      ).toLocaleString("en-NG", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
-                    </time>
-                  </article>
-                );
-              })
-            )}
-          </div>
-
-          <form
-            action={`/api/messages/${id}/send`}
-            method="post"
-            className="message-compose"
-          >
-            <label htmlFor="message-body">
-              Your message
-            </label>
-
-            <textarea
-              id="message-body"
-              name="body"
-              minLength={1}
-              maxLength={5000}
-              rows={3}
-              placeholder="Write a message..."
-              required
+          {otherParticipants[0]?.avatar_url && (
+            <img
+              src={otherParticipants[0].avatar_url}
+              alt=""
+              width={52}
+              height={52}
+              loading="lazy"
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: "50%",
+                objectFit: "cover",
+                border: "2px solid var(--border)",
+              }}
             />
-            <div className="message-compose-footer">
-              <span className="muted">
-                Maximum 5,000 characters
-              </span>
-
-              <button
-                type="submit"
-                className="button-primary"
-              >
-                Send message
-              </button>
-            </div>
-          </form>
+          )}
         </div>
+
+        <ConversationMessages
+          conversationId={id}
+          currentUserId={user.id}
+          initialMessages={messages}
+          participants={participants}
+        />
       </section>
     </main>
   );
