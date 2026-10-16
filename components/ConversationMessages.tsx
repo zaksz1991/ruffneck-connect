@@ -135,6 +135,14 @@ export default function ConversationMessages({
   const [messages, setMessages] = useState<Message[]>(() =>
     sortAndLimit(initialMessages)
   );
+  const [messageSearch, setMessageSearch] = useState("");
+  const filteredMessages = useMemo(() => {
+    const query = messageSearch.trim().toLocaleLowerCase();
+    if (!query) return messages;
+    return messages.filter((message) =>
+      message.body.toLocaleLowerCase().includes(query)
+    );
+  }, [messages, messageSearch]);
   const [draft, setDraft] = useState("");
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const replyingToRef = useRef<Message | null>(null);
@@ -1047,6 +1055,64 @@ export default function ConversationMessages({
       </div>
 
       <div
+        style={{
+          padding: "8px 24px 10px",
+          borderBottom: "1px solid var(--border, #e5e7eb)",
+        }}
+      >
+        <label
+          htmlFor="conversation-message-search"
+          className="muted"
+          style={{ display: "block", fontSize: 12, marginBottom: 6 }}
+        >
+          Search messages
+        </label>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            id="conversation-message-search"
+            type="search"
+            value={messageSearch}
+            onChange={(event) => setMessageSearch(event.target.value)}
+            placeholder="Find words in this conversation…"
+            maxLength={120}
+            aria-describedby="conversation-message-search-status"
+            style={{
+              minWidth: 0,
+              flex: 1,
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "9px 11px",
+              border: "1px solid var(--border, #d1d5db)",
+              borderRadius: 8,
+              background: "var(--surface, #fff)",
+              color: "inherit",
+            }}
+          />
+          {messageSearch && (
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setMessageSearch("")}
+              style={{ padding: "7px 10px", whiteSpace: "nowrap" }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <p
+          id="conversation-message-search-status"
+          className="muted"
+          aria-live="polite"
+          style={{ fontSize: 12, margin: "6px 0 0" }}
+        >
+          {messageSearch.trim()
+            ? `${filteredMessages.length} match${filteredMessages.length === 1 ? "" : "es"} in loaded messages`
+            : `${messages.length} message${messages.length === 1 ? "" : "s"} loaded`}
+          {hasMoreMessages ? " · Load earlier messages to search older history." : ""}
+        </p>
+      </div>
+
+      <div
         ref={listRef}
         className="message-list"
         aria-live="polite"
@@ -1071,8 +1137,22 @@ export default function ConversationMessages({
               Send a message to begin discussing your shared interests or intention.
             </p>
           </div>
+        ) : filteredMessages.length === 0 ? (
+          <div className="empty-state">
+            <h2>No matching messages</h2>
+            <p className="muted">
+              No loaded message contains “{messageSearch.trim()}”. Clear the search or load earlier messages to expand the search.
+            </p>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setMessageSearch("")}
+            >
+              Clear search
+            </button>
+          </div>
         ) : (
-          messages.map((message) => {
+          filteredMessages.map((message) => {
             const isOwnMessage = message.sender_id === currentUserId;
             const senderName = isOwnMessage
               ? "You"
