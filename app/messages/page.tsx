@@ -42,6 +42,7 @@ type OwnParticipantRecord = {
   conversation_id: string;
   last_read_at: string | null;
   is_pinned: boolean;
+  is_archived: boolean;
 };
 
 type ConversationListItem = {
@@ -53,6 +54,7 @@ type ConversationListItem = {
   conversationType: "direct" | "intent";
   unreadCount: number;
   isPinned: boolean;
+  isArchived: boolean;
   avatarUrl: string | null;
   isSelected: boolean;
 };
@@ -141,7 +143,7 @@ export default async function MessagesPage({
     error: participantError,
   } = await supabase
     .from("conversation_participants")
-    .select("conversation_id, last_read_at, is_pinned")
+    .select("conversation_id, last_read_at, is_pinned, is_archived")
     .eq("user_id", user.id)
     .eq("status", "active");
 
@@ -166,6 +168,13 @@ export default async function MessagesPage({
     ownParticipantRecords.map((row) => [
       row.conversation_id,
       row.is_pinned === true,
+    ])
+  );
+
+  const archivedByConversation = new Map(
+    ownParticipantRecords.map((row) => [
+      row.conversation_id,
+      row.is_archived === true,
     ])
   );
 
@@ -384,6 +393,7 @@ export default async function MessagesPage({
         conversationType: conversation.conversation_type,
         unreadCount,
         isPinned: pinnedByConversation.get(conversation.id) ?? false,
+        isArchived: archivedByConversation.get(conversation.id) ?? false,
         avatarUrl,
         isSelected: conversation.id === existingDirectConversation?.id,
       };

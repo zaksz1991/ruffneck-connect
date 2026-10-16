@@ -13,11 +13,12 @@ type ConversationListItem = {
   conversationType: "direct" | "intent";
   unreadCount: number;
   isPinned: boolean;
+  isArchived: boolean;
   avatarUrl: string | null;
   isSelected: boolean;
 };
 
-type FilterKey = "all" | "pinned" | "unread" | "direct" | "intent";
+type FilterKey = "all" | "pinned" | "unread" | "direct" | "intent" | "archived";
 type SortKey = "recent" | "unread" | "name";
 
 type Props = {
@@ -30,6 +31,7 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   unread: "Unread",
   direct: "Direct",
   intent: "Intent",
+  archived: "Archived",
 };
 
 function truncate(value: string, maxLength = 180) {
@@ -48,33 +50,50 @@ export default function ConversationListFilters({ items }: Props) {
   );
   const [pendingPins, setPendingPins] = useState<Set<string>>(() => new Set());
   const [pinError, setPinError] = useState("");
+  const [archivedById, setArchivedById] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(items.map((item) => [item.id, item.isArchived]))
+  );
+  const [pendingArchives, setPendingArchives] = useState<Set<string>>(() => new Set());
+  const [archiveError, setArchiveError] = useState("");
 
   // Respect freshly loaded server data after navigation or refresh.
   useEffect(() => {
     setPinnedById(Object.fromEntries(items.map((item) => [item.id, item.isPinned])));
+    setArchivedById(Object.fromEntries(items.map((item) => [item.id, item.isArchived])));
   }, [items]);
 
   const isPinned = (item: ConversationListItem) =>
     pinnedById[item.id] ?? item.isPinned;
 
+  const isArchived = (item: ConversationListItem) =>
+    archivedById[item.id] ?? item.isArchived;
+
   const counts = useMemo<Record<FilterKey, number>>(
     () => ({
-      all: items.length,
+      all: items.filter((item) => !(archivedById[item.id] ?? item.isArchived)).length,
       pinned: items.filter(
-        (item) => pinnedById[item.id] ?? item.isPinned
+        (item) => !(archivedById[item.id] ?? item.isArchived) && (pinnedById[item.id] ?? item.isPinned)
       ).length,
-      unread: items.filter((item) => item.unreadCount > 0).length,
-      direct: items.filter((item) => item.conversationType === "direct").length,
-      intent: items.filter((item) => item.conversationType === "intent").length,
+      unread: items.filter((item) => !(archivedById[item.id] ?? item.isArchived) && item.unreadCount > 0).length,
+      direct: items.filter((item) => !(archivedById[item.id] ?? item.isArchived) && item.conversationType === "direct").length,
+      intent: items.filter((item) => !(archivedById[item.id] ?? item.isArchived) && item.conversationType === "intent").length,
+      archived: items.filter((item) => archivedById[item.id] ?? item.isArchived).length,
     }),
-    [items, pinnedById]
+    [items, pinnedById, archivedById]
   );
 
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     const getPinned = (item: ConversationListItem) =>
       pinnedById[item.id] ?? item.isPinned;
+    const getArchived = (item: ConversationListItem) =>
+      archivedById[item.id] ?? item.isArchived;
     const filteredItems = items.filter((item) => {
+      if (filter === "archived") {
+        if (!getArchived(item)) return false;
+      } else if (getArchived(item)) {
+        return false;
+      }
       if (filter === "pinned" && !getPinned(item)) return false;
       if (filter === "unread" && item.unreadCount <= 0) return false;
       if (filter === "direct" && item.conversationType !== "direct") return false;
@@ -104,7 +123,7 @@ export default function ConversationListFilters({ items }: Props) {
 
       return (originalOrder.get(left.id) ?? 0) - (originalOrder.get(right.id) ?? 0);
     });
-  }, [items, query, filter, sort, pinnedById]);
+  }, [items, query, filter, sort, pinnedById, archivedById]);
 
   async function togglePin(item: ConversationListItem) {
     if (pendingPins.has(item.id)) return;
@@ -145,6 +164,50 @@ export default function ConversationListFilters({ items }: Props) {
       );
     } finally {
       setPendingPins((current) => {
+        const nextPending = new Set(current);
+        nextPending.delete(item.id);
+        return nextPending;
+      });
+    }
+  }
+
+  async function toggleArchive(item: ConversationListItem) {
+    if (pendingArchives.has(item.id)) return;
+
+    setArchiveError("");
+    const previous = isArchived(item);
+    const next = !previous;
+    setArchivedById((current) => ({ ...current, [item.id]: next }));
+    setPendingArchives((current) => new Set(current).add(item.id));
+
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        throw new Error("Your session has expired. Sign in again to archive conversations.");
+      }
+
+      const { error } = await supabase
+        .from("conversation_participants")
+        .update({ is_archived: next } as never)
+        .eq("conversation_id", item.id)
+        .eq("user_id", user.id)
+        .eq("status", "active");
+
+      if (error) throw error;
+    } catch (error) {
+      setArchivedById((current) => ({ ...current, [item.id]: previous }));
+      setArchiveError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update the archived conversation. Please try again."
+      );
+    } finally {
+      setPendingArchives((current) => {
         const nextPending = new Set(current);
         nextPending.delete(item.id);
         return nextPending;
@@ -281,16 +344,23 @@ export default function ConversationListFilters({ items }: Props) {
           {pinError}
         </div>
       )}
+      {archiveError && (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: 14 }}>
+          {archiveError}
+        </div>
+      )}
 
       {visibleItems.length === 0 ? (
         <div className="feature-card empty-state" role="status">
-          <h2>{filter === "pinned" ? "No pinned conversations" : "No matching conversations"}</h2>
+          <h2>{filter === "pinned" ? "No pinned conversations" : filter === "archived" ? "No archived conversations" : "No matching conversations"}</h2>
           <p className="muted">
             {items.length === 0
               ? "Your conversations will appear here when you connect with another member."
               : filter === "pinned"
                 ? "Pin an important conversation to keep it at the top of your list."
-                : "Try a different search or filter to find the conversation."}
+                : filter === "archived"
+                  ? "Conversations you archive will appear here. You can unarchive them at any time."
+                  : "Try a different search or filter to find the conversation."}
           </p>
           {(query || filter !== "all" || sort !== "recent") && (
             <button
@@ -310,7 +380,9 @@ export default function ConversationListFilters({ items }: Props) {
         <div className="conversation-list">
           {visibleItems.map((conversation) => {
             const pinned = isPinned(conversation);
+            const archived = isArchived(conversation);
             const busy = pendingPins.has(conversation.id);
+            const archiveBusy = pendingArchives.has(conversation.id);
             return (
               <div
                 key={conversation.id}
@@ -354,7 +426,10 @@ export default function ConversationListFilters({ items }: Props) {
                       <span className="conversation-type">
                         {conversation.conversationType === "intent" ? "Intent" : "Direct"}
                       </span>
-                      {pinned && (
+                      {archived && (
+                        <span title="Archived conversation" aria-label="Archived conversation" style={{ marginLeft: 6, fontSize: 12 }}>📦 Archived</span>
+                      )}
+                      {pinned && !archived && (
                         <span
                           title="Pinned conversation"
                           aria-label="Pinned conversation"
@@ -397,7 +472,7 @@ export default function ConversationListFilters({ items }: Props) {
                     <span className="conversation-date">{conversation.dateLabel}</span>
                   </div>
                 </Link>
-                <button
+                {!archived && <button
                   type="button"
                   className="button-secondary"
                   aria-pressed={pinned}
@@ -417,6 +492,27 @@ export default function ConversationListFilters({ items }: Props) {
                   }}
                 >
                   {busy ? "Saving…" : pinned ? "📌 Unpin" : "＋ Pin"}
+                </button>}
+                <button
+                  type="button"
+                  className="button-secondary"
+                  aria-pressed={archived}
+                  aria-label={`${archived ? "Unarchive" : "Archive"} ${conversation.name}`}
+                  title={archived ? "Unarchive conversation" : "Archive conversation"}
+                  disabled={archiveBusy}
+                  onClick={() => void toggleArchive(conversation)}
+                  style={{
+                    alignSelf: "center",
+                    flexShrink: 0,
+                    minHeight: 36,
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                    whiteSpace: "nowrap",
+                    opacity: archiveBusy ? 0.65 : 1,
+                  }}
+                >
+                  {archiveBusy ? "Saving…" : archived ? "↩ Unarchive" : "📦 Archive"}
                 </button>
               </div>
             );
