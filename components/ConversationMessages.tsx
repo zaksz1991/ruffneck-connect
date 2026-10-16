@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import MessageForwardButton from "@/components/MessageForwardButton";
 
 type ConversationParticipantProfile = {
   user_id: string;
@@ -26,6 +27,7 @@ type Message = {
   edited_at?: string | null;
   deleted_at?: string | null;
   reply_to_message_id?: string | null;
+  forwarded_from_message_id?: string | null;
   reply_to?: ReplyPreview | null;
 };
 
@@ -295,7 +297,7 @@ export default function ConversationMessages({
       const { data, error: loadError } = await supabase
         .from("messages")
         .select(
-          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
+          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, forwarded_from_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
         )
         .eq("conversation_id", conversationId)
         .is("deleted_at", null)
@@ -672,7 +674,7 @@ export default function ConversationMessages({
       const { data, error: historyError } = await supabase
         .from("messages")
         .select(
-          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
+          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, forwarded_from_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
         )
         .eq("conversation_id", conversationId)
         .is("deleted_at", null)
@@ -1207,6 +1209,9 @@ export default function ConversationMessages({
                     </div>
                   </div>
                 )}
+                {message.forwarded_from_message_id && (
+                  <div className="muted" style={{ fontSize: 12, marginTop: 6, fontStyle: "italic" }}>Forwarded message</div>
+                )}
                 {editingMessageId === message.id ? (
                   <form onSubmit={saveEdit} style={{ marginTop: 8 }}>
                     <label
@@ -1312,6 +1317,12 @@ export default function ConversationMessages({
                       marginTop: 8,
                     }}
                   >
+                    <MessageForwardButton
+                      sourceConversationId={conversationId}
+                      messageId={message.id}
+                      currentUserId={currentUserId}
+                      disabled={Boolean(deletingMessageId) || Boolean(message.deleted_at)}
+                    />
                     <button
                       type="button"
                       className="button-secondary"
