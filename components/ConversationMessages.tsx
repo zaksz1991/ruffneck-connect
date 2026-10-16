@@ -20,6 +20,16 @@ type Message = {
   deleted_at?: string | null;
 };
 
+type MessageReaction = {
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at?: string;
+};
+
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀"] as const;
+type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
+
 type SendResponse = {
   message?: Message;
   error?: string;
@@ -106,6 +116,8 @@ export default function ConversationMessages({
   const [editDraft, setEditDraft] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [reactionRows, setReactionRows] = useState<MessageReaction[]>([]);
+  const [togglingReactionKey, setTogglingReactionKey] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [realtimeStatus, setRealtimeStatus] = useState<
     "Connecting" | "Connected" | "Reconnecting"
@@ -121,6 +133,78 @@ export default function ConversationMessages({
     scrollTop: number;
   } | null>(null);
   const shouldAutoScroll = useRef(true);
+  const reactionOverrides = useRef(new Map<string, MessageReaction | null>());
+  const visibleMessageIds = useMemo(
+    () => messages.map((message) => message.id),
+    [messages]
+  );
+  const visibleMessageIdsKey = visibleMessageIds.join(",");
+  const visibleMessageIdsRef = useRef<Set<string>>(new Set(visibleMessageIds));
+  visibleMessageIdsRef.current = new Set(visibleMessageIds);
+
+  const reactionSummaries = useMemo(() => {
+    const summaries = new Map<string, { count: number; reactedByMe: boolean }>();
+    for (const reaction of reactionRows) {
+      const key = `${reaction.message_id}|${reaction.emoji}`;
+      const existing = summaries.get(key) ?? { count: 0, reactedByMe: false };
+      existing.count += 1;
+      if (reaction.user_id === currentUserId) existing.reactedByMe = true;
+      summaries.set(key, existing);
+    }
+    return summaries;
+  }, [reactionRows, currentUserId]);
+
+  function getReactionRowKey(reaction: Pick<MessageReaction, "message_id" | "user_id" | "emoji">) {
+    return JSON.stringify([reaction.message_id, reaction.user_id, reaction.emoji]);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const messageIds = visibleMessageIdsKey
+      ? visibleMessageIdsKey.split(",")
+      : [];
+
+    if (messageIds.length === 0) {
+      setReactionRows([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    async function loadReactions() {
+      const { data, error: reactionLoadError } = await supabase
+        .from("message_reactions")
+        .select("message_id, user_id, emoji, created_at")
+        .in("message_id", messageIds);
+
+      if (cancelled) return;
+      if (reactionLoadError) {
+        console.error("Unable to load message reactions:", reactionLoadError.message);
+        return;
+      }
+
+      const byKey = new Map<string, MessageReaction>();
+      for (const row of (data ?? []) as MessageReaction[]) {
+        byKey.set(getReactionRowKey(row), row);
+      }
+
+      const visibleIds = new Set(messageIds);
+      for (const [key, override] of reactionOverrides.current.entries()) {
+        if (!override || !visibleIds.has(override.message_id)) {
+          if (override === null) byKey.delete(key);
+          continue;
+        }
+        if (visibleIds.has(override.message_id)) byKey.set(key, override);
+      }
+
+      setReactionRows([...byKey.values()]);
+    }
+
+    void loadReactions();
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleMessageIdsKey, supabase]);
 
   useEffect(() => {
     let disposed = false;
@@ -250,11 +334,53 @@ export default function ConversationMessages({
             setMessages((current) =>
               current.filter((message) => message.id !== updated.id)
             );
+            setReactionRows((current) =>
+              current.filter((reaction) => reaction.message_id !== updated.id)
+            );
             return;
           }
 
           liveOverrides.set(updated.id, updated);
           setMessages((current) => mergeMessages(current, [updated]));
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "message_reactions",
+        },
+        (payload) => {
+          const incoming = payload.new as unknown as MessageReaction;
+          if (!incoming.message_id || !visibleMessageIdsRef.current.has(incoming.message_id)) return;
+
+          const key = getReactionRowKey(incoming);
+          reactionOverrides.current.set(key, incoming);
+          setReactionRows((current) =>
+            current.some((row) => getReactionRowKey(row) === key)
+              ? current
+              : [...current, incoming]
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "message_reactions",
+        },
+        (payload) => {
+          const removed = payload.old as unknown as MessageReaction;
+          if (!removed.message_id || !removed.user_id || !removed.emoji) return;
+          if (!visibleMessageIdsRef.current.has(removed.message_id)) return;
+
+          const key = getReactionRowKey(removed);
+          reactionOverrides.current.set(key, null);
+          setReactionRows((current) =>
+            current.filter((row) => getReactionRowKey(row) !== key)
+          );
         }
       )
       .subscribe((status) => {
@@ -455,6 +581,68 @@ export default function ConversationMessages({
     }
   }
 
+  async function toggleReaction(messageId: string, emoji: ReactionEmoji) {
+    const existing = reactionRows.find(
+      (reaction) =>
+        reaction.message_id === messageId &&
+        reaction.user_id === currentUserId &&
+        reaction.emoji === emoji
+    );
+    const toggleKey = `${messageId}|${emoji}`;
+    if (togglingReactionKey) return;
+
+    setTogglingReactionKey(toggleKey);
+    setError("");
+
+    try {
+      if (existing) {
+        const { error: deleteError } = await supabase
+          .from("message_reactions")
+          .delete()
+          .eq("message_id", messageId)
+          .eq("user_id", currentUserId)
+          .eq("emoji", emoji);
+
+        if (deleteError) throw new Error(deleteError.message);
+
+        reactionOverrides.current.set(getReactionRowKey(existing), null);
+        setReactionRows((current) =>
+          current.filter((row) => getReactionRowKey(row) !== getReactionRowKey(existing))
+        );
+      } else {
+        const { data, error: insertError } = await supabase
+          .from("message_reactions")
+          .insert({
+            message_id: messageId,
+            user_id: currentUserId,
+            emoji,
+          })
+          .select("message_id, user_id, emoji, created_at")
+          .single();
+
+        if (insertError) throw new Error(insertError.message);
+        if (!data) throw new Error("The reaction was not saved. Please try again.");
+
+        const reaction = data as MessageReaction;
+        const key = getReactionRowKey(reaction);
+        reactionOverrides.current.set(key, reaction);
+        setReactionRows((current) =>
+          current.some((row) => getReactionRowKey(row) === key)
+            ? current
+            : [...current, reaction]
+        );
+      }
+    } catch (reactionError) {
+      setError(
+        reactionError instanceof Error
+          ? `Unable to update reaction: ${reactionError.message}`
+          : "Unable to update this reaction. Please try again."
+      );
+    } finally {
+      setTogglingReactionKey(null);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const body = draft.trim();
@@ -603,6 +791,48 @@ export default function ConversationMessages({
                   {formatDate(message.created_at)}
                   {message.edited_at ? " · edited" : ""}
                 </time>
+                <div
+                  aria-label="Message reactions"
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    marginTop: 8,
+                  }}
+                >
+                  {REACTION_EMOJIS.map((emoji) => {
+                    const summary = reactionSummaries.get(`${message.id}|${emoji}`);
+                    const selected = Boolean(summary?.reactedByMe);
+                    const toggleKey = `${message.id}|${emoji}`;
+                    return (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className="button-secondary"
+                        aria-label={`${emoji} reaction, ${summary?.count ?? 0} total`}
+                        aria-pressed={selected}
+                        title={selected ? `Remove ${emoji} reaction` : `React with ${emoji}`}
+                        disabled={Boolean(togglingReactionKey) || Boolean(deletingMessageId)}
+                        onClick={() => void toggleReaction(message.id, emoji)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          borderRadius: 999,
+                          padding: "4px 8px",
+                          fontSize: 13,
+                          lineHeight: 1.2,
+                          borderColor: selected ? "var(--cyan, #00b4d8)" : "var(--border, #d1d5db)",
+                          background: selected ? "rgba(0,180,216,0.12)" : "transparent",
+                          opacity: togglingReactionKey === toggleKey ? 0.65 : 1,
+                        }}
+                      >
+                        <span aria-hidden="true">{emoji}</span>
+                        {(summary?.count ?? 0) > 0 && <span>{summary?.count}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
                 {isOwnMessage && editingMessageId !== message.id && (
                   <div
                     style={{
