@@ -37,6 +37,11 @@ type Message = {
   created_at: string;
 };
 
+type OwnParticipantRecord = {
+  conversation_id: string;
+  last_read_at: string | null;
+};
+
 function formatDate(value: string) {
   const date = new Date(value);
 
@@ -121,7 +126,7 @@ export default async function MessagesPage({
     error: participantError,
   } = await supabase
     .from("conversation_participants")
-    .select("conversation_id")
+    .select("conversation_id, last_read_at")
     .eq("user_id", user.id)
     .eq("status", "active");
 
@@ -132,11 +137,19 @@ export default async function MessagesPage({
     );
   }
 
+  const ownParticipantRecords =
+    (participantRows ?? []) as OwnParticipantRecord[];
+
+  const lastReadAtByConversation = new Map(
+    ownParticipantRecords.map((row) => [
+      row.conversation_id,
+      row.last_read_at,
+    ])
+  );
+
   const conversationIds = [
     ...new Set(
-      (participantRows ?? []).map(
-        (row) => row.conversation_id
-      )
+      ownParticipantRecords.map((row) => row.conversation_id)
     ),
   ];
 
@@ -164,6 +177,36 @@ export default async function MessagesPage({
       conversations = (data ?? []) as Conversation[];
     }
   }
+
+  // Count unread messages per conversation without downloading message bodies.
+  // Each count query is still subject to the existing messages RLS policy.
+  const unreadCountByConversation = new Map<string, number>();
+  await Promise.all(
+    conversations.map(async (conversation) => {
+      const lastReadAt =
+        lastReadAtByConversation.get(conversation.id) ??
+        "1970-01-01T00:00:00.000Z";
+
+      const { count, error } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("conversation_id", conversation.id)
+        .neq("sender_id", user.id)
+        .is("deleted_at", null)
+        .gt("created_at", lastReadAt);
+
+      if (error) {
+        console.error(
+          `Failed to count unread messages for conversation ${conversation.id}:`,
+          error.message
+        );
+        unreadCountByConversation.set(conversation.id, 0);
+        return;
+      }
+
+      unreadCountByConversation.set(conversation.id, count ?? 0);
+    })
+  );
 
   // Use the secure RPC instead of selecting other users' participant rows
   // or profile rows directly. The RPC checks that the caller is active in
@@ -412,6 +455,8 @@ export default async function MessagesPage({
                 latestMessageByConversation.get(
                   conversation.id
                 );
+              const unreadCount =
+                unreadCountByConversation.get(conversation.id) ?? 0;
               const otherProfiles =
                 participantProfilesByConversation.get(
                   conversation.id
@@ -472,8 +517,35 @@ export default async function MessagesPage({
                           ? "Intent"
                           : "Direct"}
                       </span>
+                      {unreadCount > 0 && (
+                        <span
+                          className="conversation-unread-badge"
+                          aria-label={`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`}
+                          title={`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: 22,
+                            height: 22,
+                            padding: "0 7px",
+                            marginLeft: 8,
+                            borderRadius: 999,
+                            background: "var(--cyan, #00b4d8)",
+                            color: "var(--navy, #0b1e3a)",
+                            fontSize: 12,
+                            fontWeight: 800,
+                            lineHeight: 1,
+                          }}
+                        >
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </span>
+                      )}
                     </div>
-                    <p className="conversation-preview">
+                    <p
+                      className="conversation-preview"
+                      style={unreadCount > 0 ? { fontWeight: 650 } : undefined}
+                    >
                       {preview.length > 180
                         ? `${preview.slice(0, 180).trim()}…`
                         : preview}

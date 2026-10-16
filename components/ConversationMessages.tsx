@@ -138,6 +138,34 @@ export default function ConversationMessages({
       setMessages(sortAndLimit([...byId.values()]));
     }
 
+    async function markConversationRead() {
+      if (disposed || document.visibilityState !== "visible") return;
+
+      const { error: markReadError } = await supabase
+        .from("conversation_participants")
+        .update({ last_read_at: new Date().toISOString() })
+        .eq("conversation_id", conversationId)
+        .eq("user_id", currentUserId)
+        .eq("status", "active");
+
+      if (markReadError) {
+        console.error(
+          "Unable to update conversation read timestamp:",
+          markReadError.message
+        );
+      }
+    }
+
+    // Opening a conversation marks currently visible messages as read.
+    void markConversationRead();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void markConversationRead();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     const channel = supabase
       .channel(`conversation-messages-${conversationId}-${currentUserId}`)
       .on(
@@ -154,6 +182,9 @@ export default function ConversationMessages({
 
           liveOverrides.set(incoming.id, incoming);
           setMessages((current) => mergeMessages(current, [incoming]));
+          if (incoming.sender_id !== currentUserId) {
+            void markConversationRead();
+          }
         }
       )
       .on(
@@ -186,6 +217,7 @@ export default function ConversationMessages({
         if (status === "SUBSCRIBED") {
           setRealtimeStatus("Connected");
           void refreshMessages();
+          void markConversationRead();
         } else if (
           status === "CHANNEL_ERROR" ||
           status === "TIMED_OUT" ||
@@ -199,6 +231,7 @@ export default function ConversationMessages({
 
     return () => {
       disposed = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       void supabase.removeChannel(channel);
     };
   }, [conversationId, currentUserId, supabase]);
