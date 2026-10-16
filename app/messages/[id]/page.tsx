@@ -34,6 +34,22 @@ type Message = {
   reply_to?: ReplyPreview | null;
 };
 
+type MessageQueryRow = Omit<Message, "reply_to"> & {
+  reply_to?: ReplyPreview | ReplyPreview[] | null;
+};
+
+function normalizeMessageQueryRow(row: unknown): Message {
+  const message = row as MessageQueryRow;
+  const replyTo = Array.isArray(message.reply_to)
+    ? message.reply_to[0] ?? null
+    : message.reply_to ?? null;
+
+  return {
+    ...message,
+    reply_to: replyTo,
+  };
+}
+
 type Conversation = {
   id: string;
   conversation_type: "direct" | "intent";
@@ -157,7 +173,7 @@ export default async function ConversationPage({
   }
 
   // Fetch newest rows for scale, then restore chronological display order.
-  const messages = ((messageRows ?? []) as Message[]).reverse();
+  const messages = (messageRows ?? []).map(normalizeMessageQueryRow).reverse();
 
   return (
     <main className="page-shell">

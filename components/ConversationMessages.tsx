@@ -29,6 +29,22 @@ type Message = {
   reply_to?: ReplyPreview | null;
 };
 
+type MessageQueryRow = Omit<Message, "reply_to"> & {
+  reply_to?: ReplyPreview | ReplyPreview[] | null;
+};
+
+function normalizeMessageQueryRow(row: unknown): Message {
+  const message = row as MessageQueryRow;
+  const replyTo = Array.isArray(message.reply_to)
+    ? message.reply_to[0] ?? null
+    : message.reply_to ?? null;
+
+  return {
+    ...message,
+    reply_to: replyTo,
+  };
+}
+
 type MessageReaction = {
   message_id: string;
   user_id: string;
@@ -266,7 +282,7 @@ export default function ConversationMessages({
         return;
       }
 
-      const latestRows = ((data ?? []) as Message[]).reverse();
+      const latestRows = (data ?? []).map(normalizeMessageQueryRow).reverse();
 
       if (latestRows.length < 200) {
         setHasMoreMessages(false);
@@ -531,7 +547,7 @@ export default function ConversationMessages({
         throw new Error(historyError.message);
       }
 
-      const olderMessages = ((data ?? []) as Message[]).reverse();
+      const olderMessages = (data ?? []).map(normalizeMessageQueryRow).reverse();
 
       if (olderMessages.length === 0) {
         setHasMoreMessages(false);
