@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type ConversationListItem = {
   id: string;
@@ -11,11 +12,12 @@ type ConversationListItem = {
   dateLabel: string;
   conversationType: "direct" | "intent";
   unreadCount: number;
+  isPinned: boolean;
   avatarUrl: string | null;
   isSelected: boolean;
 };
 
-type FilterKey = "all" | "unread" | "direct" | "intent";
+type FilterKey = "all" | "pinned" | "unread" | "direct" | "intent";
 type SortKey = "recent" | "unread" | "name";
 
 type Props = {
@@ -24,6 +26,7 @@ type Props = {
 
 const FILTER_LABELS: Record<FilterKey, string> = {
   all: "All",
+  pinned: "Pinned",
   unread: "Unread",
   direct: "Direct",
   intent: "Intent",
@@ -40,20 +43,39 @@ export default function ConversationListFilters({ items }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("recent");
+  const [pinnedById, setPinnedById] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(items.map((item) => [item.id, item.isPinned]))
+  );
+  const [pendingPins, setPendingPins] = useState<Set<string>>(() => new Set());
+  const [pinError, setPinError] = useState("");
+
+  // Respect freshly loaded server data after navigation or refresh.
+  useEffect(() => {
+    setPinnedById(Object.fromEntries(items.map((item) => [item.id, item.isPinned])));
+  }, [items]);
+
+  const isPinned = (item: ConversationListItem) =>
+    pinnedById[item.id] ?? item.isPinned;
 
   const counts = useMemo<Record<FilterKey, number>>(
     () => ({
       all: items.length,
+      pinned: items.filter(
+        (item) => pinnedById[item.id] ?? item.isPinned
+      ).length,
       unread: items.filter((item) => item.unreadCount > 0).length,
       direct: items.filter((item) => item.conversationType === "direct").length,
       intent: items.filter((item) => item.conversationType === "intent").length,
     }),
-    [items]
+    [items, pinnedById]
   );
 
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
+    const getPinned = (item: ConversationListItem) =>
+      pinnedById[item.id] ?? item.isPinned;
     const filteredItems = items.filter((item) => {
+      if (filter === "pinned" && !getPinned(item)) return false;
       if (filter === "unread" && item.unreadCount <= 0) return false;
       if (filter === "direct" && item.conversationType !== "direct") return false;
       if (filter === "intent" && item.conversationType !== "intent") return false;
@@ -64,7 +86,12 @@ export default function ConversationListFilters({ items }: Props) {
         .includes(needle);
     });
 
+    const originalOrder = new Map(items.map((item, index) => [item.id, index]));
     return [...filteredItems].sort((left, right) => {
+      // Pinned conversations stay above unpinned ones regardless of sort mode.
+      const pinDifference = Number(getPinned(right)) - Number(getPinned(left));
+      if (pinDifference !== 0) return pinDifference;
+
       if (sort === "unread") {
         const unreadDifference = right.unreadCount - left.unreadCount;
         if (unreadDifference !== 0) return unreadDifference;
@@ -75,12 +102,55 @@ export default function ConversationListFilters({ items }: Props) {
         if (nameDifference !== 0) return nameDifference;
       }
 
-      // The server returns conversations in recent-first order. Preserve that
-      // ordering for ties and when Recent is selected.
-      return items.findIndex((item) => item.id === left.id) -
-        items.findIndex((item) => item.id === right.id);
+      return (originalOrder.get(left.id) ?? 0) - (originalOrder.get(right.id) ?? 0);
     });
-  }, [items, query, filter, sort]);
+  }, [items, query, filter, sort, pinnedById]);
+
+  async function togglePin(item: ConversationListItem) {
+    if (pendingPins.has(item.id)) return;
+
+    setPinError("");
+    const previous = isPinned(item);
+    const next = !previous;
+    setPinnedById((current) => ({ ...current, [item.id]: next }));
+    setPendingPins((current) => new Set(current).add(item.id));
+
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        throw new Error("Your session has expired. Sign in again to pin conversations.");
+      }
+
+      const { error } = await supabase
+        .from("conversation_participants")
+        // Cast lets this patch compile against locally generated Supabase types
+        // that have not yet been regenerated to include the new migration column.
+        .update({ is_pinned: next } as never)
+        .eq("conversation_id", item.id)
+        .eq("user_id", user.id)
+        .eq("status", "active");
+
+      if (error) throw error;
+    } catch (error) {
+      setPinnedById((current) => ({ ...current, [item.id]: previous }));
+      setPinError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update the pinned conversation. Please try again."
+      );
+    } finally {
+      setPendingPins((current) => {
+        const nextPending = new Set(current);
+        nextPending.delete(item.id);
+        return nextPending;
+      });
+    }
+  }
 
   return (
     <section aria-label="Conversation list">
@@ -206,13 +276,21 @@ export default function ConversationListFilters({ items }: Props) {
         </div>
       </div>
 
+      {pinError && (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: 14 }}>
+          {pinError}
+        </div>
+      )}
+
       {visibleItems.length === 0 ? (
         <div className="feature-card empty-state" role="status">
-          <h2>No matching conversations</h2>
+          <h2>{filter === "pinned" ? "No pinned conversations" : "No matching conversations"}</h2>
           <p className="muted">
             {items.length === 0
               ? "Your conversations will appear here when you connect with another member."
-              : "Try a different search or filter to find the conversation."}
+              : filter === "pinned"
+                ? "Pin an important conversation to keep it at the top of your list."
+                : "Try a different search or filter to find the conversation."}
           </p>
           {(query || filter !== "all" || sort !== "recent") && (
             <button
@@ -230,73 +308,119 @@ export default function ConversationListFilters({ items }: Props) {
         </div>
       ) : (
         <div className="conversation-list">
-          {visibleItems.map((conversation) => (
-            <Link
-              key={conversation.id}
-              href={conversation.href}
-              className="conversation-card"
-              aria-current={conversation.isSelected ? "page" : undefined}
-            >
-              <div className="conversation-avatar" aria-hidden="true">
-                {conversation.avatarUrl ? (
-                  // This URL is supplied by the profile's avatar_url field.
-                  // Keep the existing direct image approach for compatibility.
-                  <img
-                    src={conversation.avatarUrl}
-                    alt=""
-                    loading="lazy"
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                      borderRadius: "inherit",
-                    }}
-                  />
-                ) : (
-                  conversation.name.charAt(0).toUpperCase()
-                )}
-              </div>
-              <div className="conversation-content">
-                <div className="conversation-heading">
-                  <h2>{conversation.name}</h2>
-                  <span className="conversation-type">
-                    {conversation.conversationType === "intent" ? "Intent" : "Direct"}
-                  </span>
-                  {conversation.unreadCount > 0 && (
-                    <span
-                      className="conversation-unread-badge"
-                      aria-label={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
-                      title={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        minWidth: 22,
-                        height: 22,
-                        padding: "0 7px",
-                        marginLeft: 8,
-                        borderRadius: 999,
-                        background: "var(--cyan, #00b4d8)",
-                        color: "var(--navy, #0b1e3a)",
-                        fontSize: 12,
-                        fontWeight: 800,
-                        lineHeight: 1,
-                      }}
-                    >
-                      {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
-                    </span>
-                  )}
-                </div>
-                <p
-                  className="conversation-preview"
-                  style={conversation.unreadCount > 0 ? { fontWeight: 650 } : undefined}
+          {visibleItems.map((conversation) => {
+            const pinned = isPinned(conversation);
+            const busy = pendingPins.has(conversation.id);
+            return (
+              <div
+                key={conversation.id}
+                className={`conversation-card${pinned ? " conversation-card-pinned" : ""}`}
+                aria-current={conversation.isSelected ? "page" : undefined}
+                style={{ display: "flex", alignItems: "stretch", gap: 8 }}
+              >
+                <Link
+                  href={conversation.href}
+                  className="conversation-card-main"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    flex: 1,
+                    minWidth: 0,
+                    gap: 12,
+                    color: "inherit",
+                    textDecoration: "none",
+                  }}
                 >
-                  {truncate(conversation.preview)}
-                </p>
-                <span className="conversation-date">{conversation.dateLabel}</span>
+                  <div className="conversation-avatar" aria-hidden="true">
+                    {conversation.avatarUrl ? (
+                      <img
+                        src={conversation.avatarUrl}
+                        alt=""
+                        loading="lazy"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          borderRadius: "inherit",
+                        }}
+                      />
+                    ) : (
+                      conversation.name.charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <div className="conversation-content" style={{ flex: 1, minWidth: 0 }}>
+                    <div className="conversation-heading">
+                      <h2>{conversation.name}</h2>
+                      <span className="conversation-type">
+                        {conversation.conversationType === "intent" ? "Intent" : "Direct"}
+                      </span>
+                      {pinned && (
+                        <span
+                          title="Pinned conversation"
+                          aria-label="Pinned conversation"
+                          style={{ marginLeft: 6, fontSize: 12 }}
+                        >
+                          📌 Pinned
+                        </span>
+                      )}
+                      {conversation.unreadCount > 0 && (
+                        <span
+                          className="conversation-unread-badge"
+                          aria-label={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
+                          title={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: 22,
+                            height: 22,
+                            padding: "0 7px",
+                            marginLeft: 8,
+                            borderRadius: 999,
+                            background: "var(--cyan, #00b4d8)",
+                            color: "var(--navy, #0b1e3a)",
+                            fontSize: 12,
+                            fontWeight: 800,
+                            lineHeight: 1,
+                          }}
+                        >
+                          {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      className="conversation-preview"
+                      style={conversation.unreadCount > 0 ? { fontWeight: 650 } : undefined}
+                    >
+                      {truncate(conversation.preview)}
+                    </p>
+                    <span className="conversation-date">{conversation.dateLabel}</span>
+                  </div>
+                </Link>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  aria-pressed={pinned}
+                  aria-label={`${pinned ? "Unpin" : "Pin"} ${conversation.name}`}
+                  title={pinned ? "Unpin conversation" : "Pin conversation"}
+                  disabled={busy}
+                  onClick={() => void togglePin(conversation)}
+                  style={{
+                    alignSelf: "center",
+                    flexShrink: 0,
+                    minHeight: 36,
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                    whiteSpace: "nowrap",
+                    opacity: busy ? 0.65 : 1,
+                  }}
+                >
+                  {busy ? "Saving…" : pinned ? "📌 Unpin" : "＋ Pin"}
+                </button>
               </div>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
