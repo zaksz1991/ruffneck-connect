@@ -8,14 +8,10 @@ type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-type Participant = {
+type ConversationParticipantProfile = {
   user_id: string;
-  status: string;
-};
-
-type Profile = {
-  id: string;
   full_name: string | null;
+  avatar_url: string | null;
 };
 
 type Message = {
@@ -49,7 +45,6 @@ export default async function ConversationPage({
   }
 
   const supabase = await createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -83,7 +78,6 @@ export default async function ConversationPage({
   }
 
   const currentConversation = conversation as Conversation;
-
   const {
     data: ownParticipant,
     error: participantError,
@@ -99,32 +93,31 @@ export default async function ConversationPage({
     notFound();
   }
 
-  const { data: participantRows } = await supabase
-    .from("conversation_participants")
-    .select("user_id, status")
-    .eq("conversation_id", id)
-    .eq("status", "active");
+  // Only this membership-checked RPC may reveal other participants' names
+  // and avatars; direct table reads are intentionally limited by RLS.
+  const {
+    data: participantRows,
+    error: participantProfilesError,
+  } = await supabase.rpc(
+    "get_conversation_participants",
+    { p_conversation_id: id }
+  );
 
-  const participants = (participantRows ?? []) as Participant[];
-
-  const otherUserIds = participants
-    .map((participant) => participant.user_id)
-    .filter((userId) => userId !== user.id);
-
-  let profiles: Profile[] = [];
-
-  if (otherUserIds.length > 0) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("id", otherUserIds);
-
-    profiles = (data ?? []) as Profile[];
+  if (participantProfilesError) {
+    console.error(
+      "Failed to load conversation participant profiles:",
+      participantProfilesError.message
+    );
   }
 
-  const otherNames = profiles.map(
-    (profile) =>
-      profile.full_name?.trim() || "RuffNeck member"
+  const participants =
+    (participantRows ?? []) as ConversationParticipantProfile[];
+  const otherParticipants = participants.filter(
+    (participant) => participant.user_id !== user.id
+  );
+  const otherNames = otherParticipants.map(
+    (participant) =>
+      participant.full_name?.trim() || "RuffNeck member"
   );
 
   const conversationTitle =
@@ -170,7 +163,6 @@ export default async function ConversationPage({
             </p>
 
             <h1>{conversationTitle}</h1>
-
             <p className="muted">
               Messages are visible to active participants in this
               conversation.
@@ -183,7 +175,6 @@ export default async function ConversationPage({
             {messages.length === 0 ? (
               <div className="empty-state">
                 <h2>Start the conversation</h2>
-
                 <p className="muted">
                   Send a message to begin discussing your shared
                   interests or intention.
@@ -193,12 +184,11 @@ export default async function ConversationPage({
               messages.map((message) => {
                 const isOwnMessage =
                   message.sender_id === user.id;
-
                 const senderName = isOwnMessage
                   ? "You"
-                  : profiles.find(
-                      (profile) =>
-                        profile.id === message.sender_id
+                  : participants.find(
+                      (participant) =>
+                        participant.user_id === message.sender_id
                     )?.full_name?.trim() || "RuffNeck member";
 
                 return (
@@ -215,7 +205,6 @@ export default async function ConversationPage({
                     </span>
 
                     <p>{message.body}</p>
-
                     <time dateTime={message.created_at}>
                       {new Date(
                         message.created_at
@@ -248,7 +237,6 @@ export default async function ConversationPage({
               placeholder="Write a message..."
               required
             />
-
             <div className="message-compose-footer">
               <span className="muted">
                 Maximum 5,000 characters

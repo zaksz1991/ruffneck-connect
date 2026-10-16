@@ -10,12 +10,6 @@ type PageProps = {
   }>;
 };
 
-type Participant = {
-  conversation_id: string;
-  user_id: string;
-  status: string;
-};
-
 type Conversation = {
   id: string;
   conversation_type: "direct" | "intent";
@@ -28,6 +22,12 @@ type Conversation = {
 type Profile = {
   id: string;
   full_name: string | null;
+};
+
+type ConversationParticipantProfile = {
+  user_id: string;
+  full_name: string | null;
+  avatar_url: string | null;
 };
 
 type Message = {
@@ -43,7 +43,6 @@ function formatDate(value: string) {
   if (Number.isNaN(date.getTime())) {
     return "Recently";
   }
-
   return new Intl.DateTimeFormat("en-NG", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -63,7 +62,6 @@ export default async function MessagesPage({
   const requestedRecipientId = params.to?.trim() ?? "";
 
   const supabase = await createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -104,7 +102,6 @@ export default async function MessagesPage({
         "Failed to load message recipient:",
         error.message
       );
-
       recipientError =
         "The selected member could not be loaded. Please try again.";
     } else if (!recipient) {
@@ -168,78 +165,62 @@ export default async function MessagesPage({
     }
   }
 
-  const otherParticipantIds = new Map<string, string[]>();
+  // Use the secure RPC instead of selecting other users' participant rows
+  // or profile rows directly. The RPC checks that the caller is active in
+  // each conversation and only returns user_id, full_name, and avatar_url.
+  const participantProfilesByConversation = new Map<
+    string,
+    ConversationParticipantProfile[]
+  >();
 
-  if (conversations.length > 0) {
-    const { data: participants, error } = await supabase
-      .from("conversation_participants")
-      .select("conversation_id, user_id, status")
-      .in(
-        "conversation_id",
-        conversations.map(
-          (conversation) => conversation.id
-        )
-      )
-      .eq("status", "active");
-
-    if (error) {
-      console.error(
-        "Failed to load conversation members:",
-        error.message
+  await Promise.all(
+    conversations.map(async (conversation) => {
+      const { data, error } = await supabase.rpc(
+        "get_conversation_participants",
+        { p_conversation_id: conversation.id }
       );
-    } else {
-      const rows = (participants ?? []) as Participant[];
 
-      for (const participant of rows) {
-        if (participant.user_id === user.id) {
-          continue;
-        }
-
-        const existing =
-          otherParticipantIds.get(
-            participant.conversation_id
-          ) ?? [];
-
-        existing.push(participant.user_id);
-
-        otherParticipantIds.set(
-          participant.conversation_id,
-          existing
+      if (error) {
+        console.error(
+          `Failed to load participants for conversation ${conversation.id}:`,
+          error.message
         );
+        participantProfilesByConversation.set(
+          conversation.id,
+          []
+        );
+        return;
       }
-    }
-  }
 
-  const otherUserIds = [
-    ...new Set(
-      Array.from(otherParticipantIds.values()).flat()
-    ),
-  ];
-
-  let profiles: Profile[] = [];
-
-  if (otherUserIds.length > 0) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("id", otherUserIds);
-
-    if (error) {
-      console.error(
-        "Failed to load participant profiles:",
-        error.message
+      participantProfilesByConversation.set(
+        conversation.id,
+        (data ?? []) as ConversationParticipantProfile[]
       );
-    } else {
-      profiles = (data ?? []) as Profile[];
+    })
+  );
+
+  const otherParticipantIds = new Map<string, string[]>();
+  const profileNames = new Map<string, string>();
+
+  for (const conversation of conversations) {
+    const participants =
+      participantProfilesByConversation.get(conversation.id) ?? [];
+    const others = participants.filter(
+      (participant) => participant.user_id !== user.id
+    );
+
+    otherParticipantIds.set(
+      conversation.id,
+      others.map((participant) => participant.user_id)
+    );
+
+    for (const participant of others) {
+      profileNames.set(
+        participant.user_id,
+        participant.full_name?.trim() || "RuffNeck member"
+      );
     }
   }
-
-  const profileNames = new Map(
-    profiles.map((profile) => [
-      profile.id,
-      profile.full_name?.trim() || "RuffNeck member",
-    ])
-  );
 
   const existingDirectConversation =
     requestedRecipientId &&
@@ -314,7 +295,6 @@ export default async function MessagesPage({
             </p>
 
             <h1>Messages</h1>
-
             <p className="muted">
               Continue conversations with people in your
               communities and around shared intentions.
@@ -357,14 +337,12 @@ export default async function MessagesPage({
               <p className="eyebrow">SELECTED MEMBER</p>
 
               <h2>{recipientName}</h2>
-
               {existingDirectConversation ? (
                 <>
                   <p className="muted">
                     Your direct conversation with this
                     member already exists.
                   </p>
-
                   <Link
                     href={`/messages/${existingDirectConversation.id}`}
                     className="button button-primary"
@@ -379,7 +357,6 @@ export default async function MessagesPage({
                     found. A new conversation needs to be
                     created before you can send a message.
                   </p>
-
                   <Link
                     href={`/members/${requestedRecipientId}`}
                     className="button button-secondary"
@@ -394,7 +371,6 @@ export default async function MessagesPage({
         {conversations.length === 0 ? (
           <div className="feature-card empty-state">
             <h2>No conversations yet</h2>
-
             <p className="muted">
               Join a community to connect with members.
               You can also respond to an open intention to
@@ -408,7 +384,6 @@ export default async function MessagesPage({
               >
                 Find communities
               </Link>
-
               <Link
                 href="/intents"
                 className="button button-secondary"
@@ -422,7 +397,6 @@ export default async function MessagesPage({
             {conversations.map((conversation) => {
               const otherIds =
                 otherParticipantIds.get(conversation.id) ?? [];
-
               const conversationName =
                 conversation.conversation_type === "intent"
                   ? conversation.title ||
@@ -434,12 +408,20 @@ export default async function MessagesPage({
                           "RuffNeck member"
                       )
                       .join(", ") || "Direct conversation";
-
               const latestMessage =
                 latestMessageByConversation.get(
                   conversation.id
                 );
-
+              const otherProfiles =
+                participantProfilesByConversation.get(
+                  conversation.id
+                )?.filter(
+                  (participant) => participant.user_id !== user.id
+                ) ?? [];
+              const avatarUrl =
+                conversation.conversation_type === "direct"
+                  ? otherProfiles[0]?.avatar_url
+                  : null;
               const preview = latestMessage
                 ? `${
                     latestMessage.sender_id === user.id
@@ -447,7 +429,6 @@ export default async function MessagesPage({
                       : ""
                   }${latestMessage.body}`
                 : "No messages yet. Start the conversation.";
-
               const isSelected =
                 conversation.id ===
                 existingDirectConversation?.id;
@@ -465,11 +446,22 @@ export default async function MessagesPage({
                     className="conversation-avatar"
                     aria-hidden="true"
                   >
-                    {conversationName
-                      .charAt(0)
-                      .toUpperCase()}
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt=""
+                        loading="lazy"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          borderRadius: "inherit",
+                        }}
+                      />
+                    ) : (
+                      conversationName.charAt(0).toUpperCase()
+                    )}
                   </div>
-
                   <div className="conversation-content">
                     <div className="conversation-heading">
                       <h2>{conversationName}</h2>
@@ -481,13 +473,11 @@ export default async function MessagesPage({
                           : "Direct"}
                       </span>
                     </div>
-
                     <p className="conversation-preview">
                       {preview.length > 180
                         ? `${preview.slice(0, 180).trim()}…`
                         : preview}
                     </p>
-
                     <span className="conversation-date">
                       {latestMessage
                         ? formatDate(latestMessage.created_at)

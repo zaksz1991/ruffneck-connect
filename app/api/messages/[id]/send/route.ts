@@ -7,8 +7,10 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-type Participant = {
+type ParticipantProfile = {
   user_id: string;
+  full_name: string | null;
+  avatar_url: string | null;
 };
 
 const UUID_REGEX =
@@ -28,7 +30,6 @@ export async function POST(
   }
 
   const supabase = await createClient();
-
   const {
     data: { user },
     error: authError,
@@ -46,13 +47,11 @@ export async function POST(
 
   const contentType = request.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
-
   let body: unknown;
 
   try {
     if (isJson) {
       const payload: unknown = await request.json();
-
       body =
         typeof payload === "object" &&
         payload !== null &&
@@ -127,27 +126,14 @@ export async function POST(
     );
   }
 
-  // Update conversation ordering for the inbox.
-  const { error: updateError } = await supabase
-    .from("conversations")
-    .update({ last_message_at: message.created_at })
-    .eq("id", id);
+  // The AFTER INSERT database trigger updates last_message_at and updated_at.
+  // The application role may not update these system-managed columns directly.
 
-  if (updateError) {
-    console.error(
-      "Conversation timestamp update failed:",
-      updateError.message
-    );
-  }
-
-  // Notify other active participants, never the sender.
+  // Use the membership-checked RPC to identify notification recipients.
   const { data: participantRows, error: recipientsError } =
-    await supabase
-      .from("conversation_participants")
-      .select("user_id")
-      .eq("conversation_id", id)
-      .eq("status", "active")
-      .neq("user_id", user.id);
+    await supabase.rpc("get_conversation_participants", {
+      p_conversation_id: id,
+    });
 
   if (recipientsError) {
     console.error(
@@ -155,14 +141,15 @@ export async function POST(
       recipientsError.message
     );
   } else {
-    const recipients = (participantRows ?? []) as Participant[];
+    const recipients = (
+      (participantRows ?? []) as ParticipantProfile[]
+    ).filter((recipient) => recipient.user_id !== user.id);
 
     if (recipients.length > 0) {
       const senderName =
         user.user_metadata?.full_name?.trim() ||
         user.email?.split("@")[0] ||
         "A RuffNeck member";
-
       const preview =
         messageBody.length > 140
           ? `${messageBody.slice(0, 137)}...`
@@ -190,7 +177,6 @@ export async function POST(
     }
   }
 
-  // Return JSON for API clients; redirect browser form submissions.
   if (isJson) {
     return NextResponse.json({ message }, { status: 201 });
   }
