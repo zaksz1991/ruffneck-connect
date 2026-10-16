@@ -150,6 +150,11 @@ export default function ConversationMessages({
   const [realtimeStatus, setRealtimeStatus] = useState<
     "Connecting" | "Connected" | "Reconnecting"
   >("Connecting");
+  const [presenceStatus, setPresenceStatus] = useState<
+    "Connecting" | "Connected" | "Reconnecting"
+  >("Connecting");
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [hasMoreMessages, setHasMoreMessages] = useState(
     initialMessages.length >= 200
   );
@@ -172,6 +177,17 @@ export default function ConversationMessages({
   const visibleMessageIdsKey = visibleMessageIds.join(",");
   const visibleMessageIdsRef = useRef<Set<string>>(new Set(visibleMessageIds));
   visibleMessageIdsRef.current = new Set(visibleMessageIds);
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteTypingTimersRef = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>()
+  );
+  const lastTypingBroadcastAtRef = useRef(0);
+  const typingSignalActiveRef = useRef(false);
+  const participantIdsKey = useMemo(
+    () => [...new Set(participants.map((participant) => participant.user_id))].sort().join(","),
+    [participants]
+  );
 
   const reactionSummaries = useMemo(() => {
     const summaries = new Map<string, { count: number; reactedByMe: boolean }>();
@@ -500,6 +516,118 @@ export default function ConversationMessages({
   }, [conversationId, currentUserId, supabase]);
 
   useEffect(() => {
+    let disposed = false;
+    const participantIds = new Set(
+      participantIdsKey.split(",").filter(Boolean)
+    );
+    const remoteTypingTimers = remoteTypingTimersRef.current;
+
+    // Presence and typing use a private channel whose topic is authorized by
+    // supabase/migrations/202610160004_conversation_presence_typing.sql.
+    const channel = supabase.channel(`conversation-presence:${conversationId}`, {
+      config: {
+        private: true,
+        presence: { key: currentUserId },
+      },
+    });
+    presenceChannelRef.current = channel;
+
+    const syncPresence = () => {
+      if (disposed) return;
+      const state = channel.presenceState<{ user_id?: string; online_at?: string }>();
+      const onlineIds = Object.entries(state)
+        .filter(
+          ([userId, metas]) =>
+            userId !== currentUserId &&
+            participantIds.has(userId) &&
+            Array.isArray(metas) &&
+            metas.length > 0
+        )
+        .map(([userId]) => userId);
+      setOnlineUserIds(onlineIds);
+    };
+
+    channel
+      .on("presence", { event: "sync" }, syncPresence)
+      .on("presence", { event: "join" }, syncPresence)
+      .on("presence", { event: "leave" }, syncPresence)
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (disposed || !payload || typeof payload.user_id !== "string") return;
+
+        const typingUserId = payload.user_id as string;
+        if (
+          typingUserId === currentUserId ||
+          !participantIds.has(typingUserId)
+        ) {
+          return;
+        }
+
+        const existingTimer = remoteTypingTimers.get(typingUserId);
+        if (existingTimer) clearTimeout(existingTimer);
+
+        if (payload.is_typing !== true) {
+          remoteTypingTimers.delete(typingUserId);
+          setTypingUserIds((current) =>
+            current.filter((userId) => userId !== typingUserId)
+          );
+          return;
+        }
+
+        setTypingUserIds((current) =>
+          current.includes(typingUserId) ? current : [...current, typingUserId]
+        );
+        remoteTypingTimers.set(
+          typingUserId,
+          setTimeout(() => {
+            remoteTypingTimers.delete(typingUserId);
+            setTypingUserIds((current) =>
+              current.filter((userId) => userId !== typingUserId)
+            );
+          }, 2400)
+        );
+      })
+      .subscribe((status) => {
+        if (disposed) return;
+
+        if (status === "SUBSCRIBED") {
+          setPresenceStatus("Connected");
+          void channel.track({
+            user_id: currentUserId,
+            online_at: new Date().toISOString(),
+          });
+          syncPresence();
+        } else if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          setPresenceStatus("Reconnecting");
+          setOnlineUserIds([]);
+          setTypingUserIds([]);
+        } else {
+          setPresenceStatus("Connecting");
+        }
+      });
+
+    return () => {
+      disposed = true;
+      if (typingStopTimerRef.current) {
+        clearTimeout(typingStopTimerRef.current);
+        typingStopTimerRef.current = null;
+      }
+      for (const timer of remoteTypingTimers.values()) clearTimeout(timer);
+      remoteTypingTimers.clear();
+      typingSignalActiveRef.current = false;
+      if (presenceChannelRef.current === channel) {
+        presenceChannelRef.current = null;
+      }
+      setOnlineUserIds([]);
+      setTypingUserIds([]);
+      void supabase.removeChannel(channel);
+    };
+  }, [conversationId, currentUserId, participantIdsKey, supabase]);
+
+  useEffect(() => {
     const list = listRef.current;
     const previousScroll = pendingOlderScroll.current;
 
@@ -766,6 +894,53 @@ export default function ConversationMessages({
     }
   }
 
+  function sendTypingSignal(isTyping: boolean) {
+    const channel = presenceChannelRef.current;
+    if (!channel) return;
+
+    if (isTyping) {
+      const now = Date.now();
+      if (now - lastTypingBroadcastAtRef.current < 700) return;
+      lastTypingBroadcastAtRef.current = now;
+    }
+
+    void channel.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { user_id: currentUserId, is_typing: isTyping },
+    });
+  }
+
+  function stopTyping() {
+    if (typingStopTimerRef.current) {
+      clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+    if (typingSignalActiveRef.current) sendTypingSignal(false);
+    typingSignalActiveRef.current = false;
+  }
+
+  function handleDraftChange(value: string) {
+    setDraft(value);
+    if (typingStopTimerRef.current) {
+      clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+
+    if (!value.trim()) {
+      stopTyping();
+      return;
+    }
+
+    typingSignalActiveRef.current = true;
+    sendTypingSignal(true);
+    typingStopTimerRef.current = setTimeout(() => {
+      if (typingSignalActiveRef.current) sendTypingSignal(false);
+      typingSignalActiveRef.current = false;
+      typingStopTimerRef.current = null;
+    }, 1600);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const body = draft.trim();
@@ -801,6 +976,7 @@ export default function ConversationMessages({
       shouldAutoScroll.current = true;
       const messageWithReply = await hydrateReplyPreview(result.message as Message);
       setMessages((current) => mergeMessages(current, [messageWithReply]));
+      stopTyping();
       setDraft("");
       setReplyingTo(null);
     } catch (sendError) {
@@ -814,6 +990,16 @@ export default function ConversationMessages({
     }
   }
 
+  const otherParticipants = participants.filter(
+    (participant) => participant.user_id !== currentUserId
+  );
+  const onlineParticipantNames = otherParticipants
+    .filter((participant) => onlineUserIds.includes(participant.user_id))
+    .map((participant) => participant.full_name?.trim() || "RuffNeck member");
+  const typingParticipantNames = otherParticipants
+    .filter((participant) => typingUserIds.includes(participant.user_id))
+    .map((participant) => participant.full_name?.trim() || "A participant");
+
   return (
     <div className="message-panel">
       <p
@@ -821,8 +1007,44 @@ export default function ConversationMessages({
         aria-live="polite"
         style={{ padding: "12px 24px 0", marginBottom: 0, fontSize: 12 }}
       >
-        Live updates: {realtimeStatus}
+        Live updates: {realtimeStatus} · Presence: {presenceStatus}
       </p>
+      <div
+        className="muted"
+        aria-live="polite"
+        style={{
+          padding: "5px 24px 10px",
+          fontSize: 12,
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        {otherParticipants.length > 0 && (
+          <span>
+            <span
+              aria-hidden="true"
+              style={{
+                color: onlineParticipantNames.length ? "#16a34a" : "#9ca3af",
+                marginRight: 5,
+              }}
+            >
+              ●
+            </span>
+            {onlineParticipantNames.length > 0
+              ? `${onlineParticipantNames.join(", ")} active here`
+              : otherParticipants.length === 1
+                ? "Other participant not active here"
+                : "Other participants not active here"}
+          </span>
+        )}
+        {typingParticipantNames.length > 0 && (
+          <span>
+            {typingParticipantNames.join(", ")} {typingParticipantNames.length === 1 ? "is" : "are"} typing…
+          </span>
+        )}
+      </div>
 
       <div
         ref={listRef}
@@ -1108,7 +1330,8 @@ export default function ConversationMessages({
           id="message-body"
           name="body"
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => handleDraftChange(event.target.value)}
+          onBlur={stopTyping}
           minLength={1}
           maxLength={5000}
           rows={3}
