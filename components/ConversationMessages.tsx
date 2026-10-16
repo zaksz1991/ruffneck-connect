@@ -41,13 +41,13 @@ function sortAndLimit(messages: Message[]) {
     }
   }
 
-  return [...byId.values()]
-    .sort(
-      (left, right) =>
-        new Date(left.created_at).getTime() -
-        new Date(right.created_at).getTime()
-    )
-    .slice(-200);
+  return [...byId.values()].sort((left, right) => {
+    const timeDifference =
+      new Date(left.created_at).getTime() -
+      new Date(right.created_at).getTime();
+
+    return timeDifference || left.id.localeCompare(right.id);
+  });
 }
 
 function mergeMessages(current: Message[], incoming: Message[]) {
@@ -96,7 +96,17 @@ export default function ConversationMessages({
   const [realtimeStatus, setRealtimeStatus] = useState<
     "Connecting" | "Connected" | "Reconnecting"
   >("Connecting");
+  const [hasMoreMessages, setHasMoreMessages] = useState(
+    initialMessages.length >= 200
+  );
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const pendingOlderScroll = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
+  const shouldAutoScroll = useRef(true);
 
   useEffect(() => {
     let disposed = false;
@@ -113,7 +123,8 @@ export default function ConversationMessages({
         )
         .eq("conversation_id", conversationId)
         .is("deleted_at", null)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
         .limit(200);
 
       if (disposed) return;
@@ -123,19 +134,33 @@ export default function ConversationMessages({
         return;
       }
 
-      const byId = new Map<string, Message>(
-        ((data ?? []) as Message[]).map((message) => [message.id, message])
-      );
+      const latestRows = ((data ?? []) as Message[]).reverse();
 
-      for (const [messageId, message] of liveOverrides.entries()) {
-        if (message) {
-          byId.set(messageId, message);
-        } else {
-          byId.delete(messageId);
-        }
+      if (latestRows.length < 200) {
+        setHasMoreMessages(false);
       }
 
-      setMessages(sortAndLimit([...byId.values()]));
+      // Keep any earlier pages the user has already loaded. A refresh should
+      // update the latest snapshot, not replace the entire visible history.
+      setMessages((current) => {
+        const byId = new Map<string, Message>(
+          current.map((message) => [message.id, message])
+        );
+
+        for (const message of latestRows) {
+          byId.set(message.id, message);
+        }
+
+        for (const [messageId, message] of liveOverrides.entries()) {
+          if (message) {
+            byId.set(messageId, message);
+          } else {
+            byId.delete(messageId);
+          }
+        }
+
+        return sortAndLimit([...byId.values()]);
+      });
     }
 
     async function markConversationRead() {
@@ -179,6 +204,13 @@ export default function ConversationMessages({
         (payload) => {
           const incoming = payload.new as unknown as Message;
           if (!incoming.id || incoming.deleted_at) return;
+
+          const list = listRef.current;
+          const distanceFromBottom = list
+            ? list.scrollHeight - list.scrollTop - list.clientHeight
+            : 0;
+          shouldAutoScroll.current =
+            incoming.sender_id === currentUserId || distanceFromBottom < 160;
 
           liveOverrides.set(incoming.id, incoming);
           setMessages((current) => mergeMessages(current, [incoming]));
@@ -237,11 +269,84 @@ export default function ConversationMessages({
   }, [conversationId, currentUserId, supabase]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    });
+    const list = listRef.current;
+    const previousScroll = pendingOlderScroll.current;
+
+    if (list && previousScroll) {
+      pendingOlderScroll.current = null;
+      list.scrollTop =
+        previousScroll.scrollTop +
+        (list.scrollHeight - previousScroll.scrollHeight);
+      return;
+    }
+
+    if (shouldAutoScroll.current) {
+      bottomRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+      shouldAutoScroll.current = false;
+    }
   }, [messages]);
+
+  async function loadOlderMessages() {
+    if (loadingOlderMessages || !hasMoreMessages || messages.length === 0) {
+      return;
+    }
+
+    const oldestMessage = messages[0];
+    const list = listRef.current;
+    if (!oldestMessage || !list) return;
+
+    setLoadingOlderMessages(true);
+    setError("");
+
+    try {
+      const { data, error: historyError } = await supabase
+        .from("messages")
+        .select(
+          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at"
+        )
+        .eq("conversation_id", conversationId)
+        .is("deleted_at", null)
+        .or(
+          `created_at.lt.${oldestMessage.created_at},and(created_at.eq.${oldestMessage.created_at},id.lt.${oldestMessage.id})`
+        )
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(50);
+
+      if (historyError) {
+        throw new Error(historyError.message);
+      }
+
+      const olderMessages = ((data ?? []) as Message[]).reverse();
+
+      if (olderMessages.length === 0) {
+        setHasMoreMessages(false);
+        return;
+      }
+
+      pendingOlderScroll.current = {
+        scrollHeight: list.scrollHeight,
+        scrollTop: list.scrollTop,
+      };
+      shouldAutoScroll.current = false;
+      setMessages((current) => mergeMessages(olderMessages, current));
+
+      if (olderMessages.length < 50) {
+        setHasMoreMessages(false);
+      }
+    } catch (historyError) {
+      setError(
+        historyError instanceof Error
+          ? `Unable to load earlier messages: ${historyError.message}`
+          : "Unable to load earlier messages. Please try again."
+      );
+    } finally {
+      setLoadingOlderMessages(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -272,6 +377,7 @@ export default function ConversationMessages({
 
       // Realtime and the HTTP response can race; merge by message ID to avoid
       // displaying the same message twice.
+      shouldAutoScroll.current = true;
       setMessages((current) => mergeMessages(current, [result.message as Message]));
       setDraft("");
     } catch (sendError) {
@@ -295,7 +401,24 @@ export default function ConversationMessages({
         Live updates: {realtimeStatus}
       </p>
 
-      <div className="message-list" aria-live="polite" aria-relevant="additions text">
+      <div
+        ref={listRef}
+        className="message-list"
+        aria-live="polite"
+        aria-relevant="additions text"
+      >
+        {hasMoreMessages && messages.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "center", padding: "12px 0" }}>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => void loadOlderMessages()}
+              disabled={loadingOlderMessages}
+            >
+              {loadingOlderMessages ? "Loading earlier messages…" : "Load earlier messages"}
+            </button>
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="empty-state">
             <h2>Start the conversation</h2>

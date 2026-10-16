@@ -136,7 +136,8 @@ export default async function ConversationPage({
     )
     .eq("conversation_id", id)
     .is("deleted_at", null)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(200);
 
   if (messagesError) {
@@ -146,7 +147,8 @@ export default async function ConversationPage({
     );
   }
 
-  const messages = (messageRows ?? []) as Message[];
+  // Fetch newest rows for scale, then restore chronological display order.
+  const messages = ((messageRows ?? []) as Message[]).reverse();
 
   return (
     <main className="page-shell">
