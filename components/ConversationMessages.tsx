@@ -25,6 +25,16 @@ type SendResponse = {
   error?: string;
 };
 
+type EditResponse = {
+  message?: Message;
+  error?: string;
+};
+
+type DeleteResponse = {
+  deleted?: boolean;
+  error?: string;
+};
+
 type Props = {
   conversationId: string;
   currentUserId: string;
@@ -92,6 +102,10 @@ export default function ConversationMessages({
   );
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [realtimeStatus, setRealtimeStatus] = useState<
     "Connecting" | "Connected" | "Reconnecting"
@@ -348,6 +362,99 @@ export default function ConversationMessages({
     }
   }
 
+  function beginEdit(message: Message) {
+    setError("");
+    setEditingMessageId(message.id);
+    setEditDraft(message.body);
+  }
+
+  function cancelEdit() {
+    setEditingMessageId(null);
+    setEditDraft("");
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const messageId = editingMessageId;
+    const body = editDraft.trim();
+
+    if (!messageId || savingEdit) return;
+    if (!body || body.length > 5000) {
+      setError("Edited messages must contain between 1 and 5,000 characters.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/messages/${conversationId}/edit`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId, body }),
+      });
+      const result = (await response.json()) as EditResponse;
+
+      if (!response.ok || !result.message) {
+        throw new Error(result.error || "Unable to edit this message.");
+      }
+
+      liveOverrides.set(result.message.id, result.message);
+      setMessages((current) => mergeMessages(current, [result.message as Message]));
+      setEditingMessageId(null);
+      setEditDraft("");
+    } catch (editError) {
+      setError(
+        editError instanceof Error
+          ? editError.message
+          : "Unable to edit this message. Please try again."
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function deleteMessage(messageId: string) {
+    if (deletingMessageId) return;
+
+    const confirmed = window.confirm(
+      "Delete this message? It will be hidden from the conversation."
+    );
+    if (!confirmed) return;
+
+    setDeletingMessageId(messageId);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/messages/${conversationId}/delete`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId }),
+      });
+      const result = (await response.json()) as DeleteResponse;
+
+      if (!response.ok || !result.deleted) {
+        throw new Error(result.error || "Unable to delete this message.");
+      }
+
+      liveOverrides.set(messageId, null);
+      setMessages((current) =>
+        current.filter((message) => message.id !== messageId)
+      );
+
+      if (editingMessageId === messageId) cancelEdit();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Unable to delete this message. Please try again."
+      );
+    } finally {
+      setDeletingMessageId(null);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const body = draft.trim();
@@ -443,11 +550,88 @@ export default function ConversationMessages({
                 }`}
               >
                 <span className="message-sender">{senderName}</span>
-                <p>{message.body}</p>
+                {editingMessageId === message.id ? (
+                  <form onSubmit={saveEdit} style={{ marginTop: 8 }}>
+                    <label
+                      htmlFor={`edit-message-${message.id}`}
+                      className="muted"
+                      style={{ display: "block", marginBottom: 6, fontSize: 12 }}
+                    >
+                      Edit message
+                    </label>
+                    <textarea
+                      id={`edit-message-${message.id}`}
+                      value={editDraft}
+                      onChange={(event) => setEditDraft(event.target.value)}
+                      maxLength={5000}
+                      rows={3}
+                      required
+                      disabled={savingEdit}
+                      style={{ width: "100%", boxSizing: "border-box" }}
+                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        gap: 8,
+                        marginTop: 8,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={cancelEdit}
+                        disabled={savingEdit}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="button-primary"
+                        disabled={savingEdit || !editDraft.trim()}
+                      >
+                        {savingEdit ? "Saving…" : "Save edit"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                    {message.body}
+                  </p>
+                )}
                 <time dateTime={message.created_at}>
                   {formatDate(message.created_at)}
                   {message.edited_at ? " · edited" : ""}
                 </time>
+                {isOwnMessage && editingMessageId !== message.id && (
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: 8,
+                      marginTop: 8,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => beginEdit(message)}
+                      disabled={Boolean(deletingMessageId) || savingEdit}
+                      style={{ padding: "5px 10px", fontSize: 12 }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => void deleteMessage(message.id)}
+                      disabled={Boolean(deletingMessageId) || savingEdit}
+                      style={{ padding: "5px 10px", fontSize: 12 }}
+                    >
+                      {deletingMessageId === message.id ? "Deleting…" : "Delete"}
+                    </button>
+                  </div>
+                )}
               </article>
             );
           })
