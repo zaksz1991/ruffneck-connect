@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import ConversationListFilters from "@/components/ConversationListFilters";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,18 @@ type Message = {
 type OwnParticipantRecord = {
   conversation_id: string;
   last_read_at: string | null;
+};
+
+type ConversationListItem = {
+  id: string;
+  href: string;
+  name: string;
+  preview: string;
+  dateLabel: string;
+  conversationType: "direct" | "intent";
+  unreadCount: number;
+  avatarUrl: string | null;
+  isSelected: boolean;
 };
 
 function formatDate(value: string) {
@@ -328,6 +341,45 @@ export default async function MessagesPage({
     ])
   );
 
+  const conversationListItems: ConversationListItem[] = conversations.map(
+    (conversation) => {
+      const otherIds = otherParticipantIds.get(conversation.id) ?? [];
+      const name =
+        conversation.conversation_type === "intent"
+          ? conversation.title || "Intent conversation"
+          : otherIds
+              .map((id) => profileNames.get(id) ?? "RuffNeck member")
+              .join(", ") || "Direct conversation";
+      const latestMessage = latestMessageByConversation.get(conversation.id);
+      const unreadCount = unreadCountByConversation.get(conversation.id) ?? 0;
+      const otherProfiles =
+        participantProfilesByConversation.get(conversation.id)?.filter(
+          (participant) => participant.user_id !== user.id
+        ) ?? [];
+      const avatarUrl =
+        conversation.conversation_type === "direct"
+          ? otherProfiles[0]?.avatar_url ?? null
+          : null;
+      const preview = latestMessage
+        ? `${latestMessage.sender_id === user.id ? "You: " : ""}${latestMessage.body}`
+        : "No messages yet. Start the conversation.";
+
+      return {
+        id: conversation.id,
+        href: `/messages/${conversation.id}`,
+        name,
+        preview,
+        dateLabel: latestMessage
+          ? formatDate(latestMessage.created_at)
+          : `Created ${formatDate(conversation.created_at)}`,
+        conversationType: conversation.conversation_type,
+        unreadCount,
+        avatarUrl,
+        isSelected: conversation.id === existingDirectConversation?.id,
+      };
+    }
+  );
+
   return (
     <main className="page-shell">
       <section className="section">
@@ -436,132 +488,7 @@ export default async function MessagesPage({
             </div>
           </div>
         ) : (
-          <div className="conversation-list">
-            {conversations.map((conversation) => {
-              const otherIds =
-                otherParticipantIds.get(conversation.id) ?? [];
-              const conversationName =
-                conversation.conversation_type === "intent"
-                  ? conversation.title ||
-                    "Intent conversation"
-                  : otherIds
-                      .map(
-                        (id) =>
-                          profileNames.get(id) ??
-                          "RuffNeck member"
-                      )
-                      .join(", ") || "Direct conversation";
-              const latestMessage =
-                latestMessageByConversation.get(
-                  conversation.id
-                );
-              const unreadCount =
-                unreadCountByConversation.get(conversation.id) ?? 0;
-              const otherProfiles =
-                participantProfilesByConversation.get(
-                  conversation.id
-                )?.filter(
-                  (participant) => participant.user_id !== user.id
-                ) ?? [];
-              const avatarUrl =
-                conversation.conversation_type === "direct"
-                  ? otherProfiles[0]?.avatar_url
-                  : null;
-              const preview = latestMessage
-                ? `${
-                    latestMessage.sender_id === user.id
-                      ? "You: "
-                      : ""
-                  }${latestMessage.body}`
-                : "No messages yet. Start the conversation.";
-              const isSelected =
-                conversation.id ===
-                existingDirectConversation?.id;
-
-              return (
-                <Link
-                  key={conversation.id}
-                  href={`/messages/${conversation.id}`}
-                  className="conversation-card"
-                  aria-current={
-                    isSelected ? "page" : undefined
-                  }
-                >
-                  <div
-                    className="conversation-avatar"
-                    aria-hidden="true"
-                  >
-                    {avatarUrl ? (
-                      <img
-                        src={avatarUrl}
-                        alt=""
-                        loading="lazy"
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          borderRadius: "inherit",
-                        }}
-                      />
-                    ) : (
-                      conversationName.charAt(0).toUpperCase()
-                    )}
-                  </div>
-                  <div className="conversation-content">
-                    <div className="conversation-heading">
-                      <h2>{conversationName}</h2>
-
-                      <span className="conversation-type">
-                        {conversation.conversation_type ===
-                        "intent"
-                          ? "Intent"
-                          : "Direct"}
-                      </span>
-                      {unreadCount > 0 && (
-                        <span
-                          className="conversation-unread-badge"
-                          aria-label={`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`}
-                          title={`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            minWidth: 22,
-                            height: 22,
-                            padding: "0 7px",
-                            marginLeft: 8,
-                            borderRadius: 999,
-                            background: "var(--cyan, #00b4d8)",
-                            color: "var(--navy, #0b1e3a)",
-                            fontSize: 12,
-                            fontWeight: 800,
-                            lineHeight: 1,
-                          }}
-                        >
-                          {unreadCount > 99 ? "99+" : unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    <p
-                      className="conversation-preview"
-                      style={unreadCount > 0 ? { fontWeight: 650 } : undefined}
-                    >
-                      {preview.length > 180
-                        ? `${preview.slice(0, 180).trim()}…`
-                        : preview}
-                    </p>
-                    <span className="conversation-date">
-                      {latestMessage
-                        ? formatDate(latestMessage.created_at)
-                        : `Created ${formatDate(
-                            conversation.created_at
-                          )}`}
-                    </span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+          <ConversationListFilters items={conversationListItems} />
         )}
       </section>
     </main>
