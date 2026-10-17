@@ -9,6 +9,10 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{
+    member_success?: string;
+    member_error?: string;
+  }>;
 };
 
 type Community = {
@@ -57,10 +61,35 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+const MEMBER_SUCCESS_MESSAGES: Record<string, string> = {
+  added: "The member was added to the community.",
+  removed: "The member was removed from the community.",
+  role_updated: "The member's role was updated successfully.",
+};
+
+const MEMBER_ERROR_MESSAGES: Record<string, string> = {
+  select_user: "Select a user before adding a member.",
+  already_member: "You cannot add yourself as a member.",
+  user_unavailable: "That user is unavailable in the public directory.",
+  add_failed: "The member could not be added. Check your permissions and try again.",
+  invalid_target: "The selected member cannot be removed.",
+  remove_failed: "The member could not be removed. Check your permissions and try again.",
+  invalid_role_change: "The requested role change is invalid.",
+  role_change_failed: "The role could not be changed. Only the community owner can change member roles.",
+};
+
 export default async function CommunityDetailsPage({
   params,
+  searchParams,
 }: PageProps) {
   const { slug } = await params;
+  const query = searchParams ? await searchParams : {};
+  const memberSuccessMessage = query.member_success
+    ? MEMBER_SUCCESS_MESSAGES[query.member_success]
+    : undefined;
+  const memberErrorMessage = query.member_error
+    ? MEMBER_ERROR_MESSAGES[query.member_error]
+    : undefined;
   const supabase = await createClient();
 
   const {
@@ -452,6 +481,21 @@ export default async function CommunityDetailsPage({
           </div>
         </div>
       </section>
+
+      {(memberSuccessMessage || memberErrorMessage) && (
+        <section className="section" aria-live="polite">
+          {memberSuccessMessage && (
+            <article className="feature-card" role="status">
+              <p className="status-badge status-active">{memberSuccessMessage}</p>
+            </article>
+          )}
+          {memberErrorMessage && (
+            <article className="feature-card" role="alert">
+              <p>{memberErrorMessage}</p>
+            </article>
+          )}
+        </section>
+      )}
 
       {canManageMembers && (
         <>
