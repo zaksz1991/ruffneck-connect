@@ -336,6 +336,48 @@ export default async function CommunityDetailsPage({
     redirect(`${communityPath}?member_success=removed`);
   }
 
+  async function setMemberRole(formData: FormData) {
+    "use server";
+
+    const serverSupabase = await createClient();
+
+    const {
+      data: { user: actor },
+    } = await serverSupabase.auth.getUser();
+
+    if (!actor) {
+      redirect(`/login?next=${encodeURIComponent(communityPath)}`);
+    }
+
+    const targetUserId = String(formData.get("user_id") ?? "").trim();
+    const newRole = String(formData.get("new_role") ?? "").trim();
+
+    if (
+      !targetUserId ||
+      targetUserId === actor.id ||
+      !["member", "moderator"].includes(newRole)
+    ) {
+      redirect(`${communityPath}?member_error=invalid_role_change`);
+    }
+
+    const { error: roleError } = await serverSupabase.rpc(
+      "admin_set_community_member_role",
+      {
+        p_community_id: community.id,
+        p_user_id: targetUserId,
+        p_new_role: newRole,
+      }
+    );
+
+    if (roleError) {
+      console.error("Change community member role failed:", roleError.message);
+      redirect(`${communityPath}?member_error=role_change_failed`);
+    }
+
+    revalidatePath(communityPath);
+    redirect(`${communityPath}?member_success=role_updated`);
+  }
+
   return (
     <main className="page-shell">
       <section className="hero">
@@ -493,9 +535,38 @@ export default async function CommunityDetailsPage({
                             <button
                               className="button button-secondary"
                               type="submit"
-                              formAction={removeMember}
                             >
                               Remove member
+                            </button>
+                          </form>
+                        )}
+
+                      {isOwner &&
+                        !isTargetOwner &&
+                        (member.role === "member" ||
+                          member.role === "moderator") && (
+                          <form action={setMemberRole}>
+                            <input
+                              type="hidden"
+                              name="user_id"
+                              value={member.user_id}
+                            />
+                            <input
+                              type="hidden"
+                              name="new_role"
+                              value={
+                                member.role === "moderator"
+                                  ? "member"
+                                  : "moderator"
+                              }
+                            />
+                            <button
+                              className="button button-secondary"
+                              type="submit"
+                            >
+                              {member.role === "moderator"
+                                ? "Demote to member"
+                                : "Promote to moderator"}
                             </button>
                           </form>
                         )}
