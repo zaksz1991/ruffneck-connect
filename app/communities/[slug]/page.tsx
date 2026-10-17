@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import CommunityMembershipRequests from "./CommunityMembershipRequests";
+import CommunityActivityLog from "./CommunityActivityLog";
 
 export const dynamic = "force-dynamic";
 
@@ -100,8 +102,7 @@ export default async function CommunityDetailsPage({
   const isMember = membership?.status === "active";
   const isPending = membership?.status === "pending";
 
-  const isModerator =
-    isMember && membership?.role === "moderator";
+  const isModerator = isMember && membership?.role === "moderator";
 
   const canManageMembers = isOwner || isModerator;
 
@@ -182,8 +183,9 @@ export default async function CommunityDetailsPage({
       .order("full_name", { ascending: true })
       .limit(200);
 
-    availableProfiles = ((directoryProfiles ?? []) as MemberProfile[])
-      .filter((candidate) => !existingIds.has(candidate.id));
+    availableProfiles = ((directoryProfiles ?? []) as MemberProfile[]).filter(
+      (candidate) => !existingIds.has(candidate.id)
+    );
   }
 
   const profileById = new Map(
@@ -205,9 +207,7 @@ export default async function CommunityDetailsPage({
     } = await serverSupabase.auth.getUser();
 
     if (!actor) {
-      redirect(
-        `/login?next=${encodeURIComponent(communityPath)}`
-      );
+      redirect(`/login?next=${encodeURIComponent(communityPath)}`);
     }
 
     const { data: currentCommunity } = await serverSupabase
@@ -284,9 +284,7 @@ export default async function CommunityDetailsPage({
     } = await serverSupabase.auth.getUser();
 
     if (!actor) {
-      redirect(
-        `/login?next=${encodeURIComponent(communityPath)}`
-      );
+      redirect(`/login?next=${encodeURIComponent(communityPath)}`);
     }
 
     const { data: currentCommunity } = await serverSupabase
@@ -413,6 +411,13 @@ export default async function CommunityDetailsPage({
         </div>
       </section>
 
+      {canManageMembers && (
+        <>
+          <CommunityMembershipRequests communityId={community.id} />
+          <CommunityActivityLog communityId={community.id} />
+        </>
+      )}
+
       {(isMember || isOwner) && (
         <section className="section">
           <div className="section-heading">
@@ -439,8 +444,7 @@ export default async function CommunityDetailsPage({
               ) : (
                 members.map((member) => {
                   const memberProfile = profileById.get(member.user_id);
-                  const isTargetOwner =
-                    member.user_id === community.owner_id;
+                  const isTargetOwner = member.user_id === community.owner_id;
                   const displayName =
                     memberProfile?.full_name ||
                     (isTargetOwner ? ownerName : "RuffNeck member");
@@ -470,9 +474,7 @@ export default async function CommunityDetailsPage({
                             Joined {formatDate(member.joined_at)}
                           </p>
 
-                          <span
-                            className={`member-role role-${member.role}`}
-                          >
+                          <span className={`member-role role-${member.role}`}>
                             {member.role}
                           </span>
                         </div>
@@ -584,12 +586,12 @@ export default async function CommunityDetailsPage({
             </p>
 
             <p>
-              <strong>Location:</strong>{" "}
+              <strong>Location:</strong> {" "}
               {community.location_label || "Not specified"}
             </p>
 
             <p>
-              <strong>Membership:</strong>{" "}
+              <strong>Membership:</strong> {" "}
               {community.join_approval_required
                 ? "Approval required"
                 : "Open to join"}
@@ -643,9 +645,7 @@ export default async function CommunityDetailsPage({
             <div className="grid-3">
               {intents.map((intent) => (
                 <article className="feature-card" key={intent.id}>
-                  <span
-                    className={`intent-badge intent-${intent.intent_type}`}
-                  >
+                  <span className={`intent-badge intent-${intent.intent_type}`}>
                     {intent.intent_type.toUpperCase()}
                   </span>
 
