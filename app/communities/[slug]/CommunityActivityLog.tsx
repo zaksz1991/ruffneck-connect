@@ -8,7 +8,7 @@ type Activity = {
   actor_id: string | null;
   target_user_id: string | null;
   activity_type: string;
-  details: Record<string, unknown>;
+  details: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -17,29 +17,60 @@ type Profile = {
   full_name: string | null;
 };
 
+type Filter = "all" | "membership" | "roles";
+
 type Props = {
   communityId: string;
 };
 
 const ACTIVITY_LABELS: Record<string, string> = {
-  member_added: "Added a member",
-  member_removed: "Removed a member",
-  membership_approved: "Approved a membership request",
-  membership_rejected: "Rejected a membership request",
-  member_role_changed: "Changed a member's role",
+  member_added: "Member added",
+  member_removed: "Member removed",
+  membership_approved: "Membership request approved",
+  membership_rejected: "Membership request rejected",
+  member_role_changed: "Member role changed",
 };
+
+function isRoleActivity(activity: Activity) {
+  return activity.activity_type === "member_role_changed";
+}
+
+function matchesFilter(activity: Activity, filter: Filter) {
+  if (filter === "all") return true;
+  if (filter === "roles") return isRoleActivity(activity);
+  return !isRoleActivity(activity);
+}
+
+function formatTimestamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+
+  return new Intl.DateTimeFormat("en-NG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
 
 export default function CommunityActivityLog({ communityId }: Props) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadActivities() {
-      setLoading(true);
+    async function loadActivities(manualRefresh = false) {
+      if (manualRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError("");
 
       try {
@@ -49,7 +80,7 @@ export default function CommunityActivityLog({ communityId }: Props) {
           .select("id, actor_id, target_user_id, activity_type, details, created_at")
           .eq("community_id", communityId)
           .order("created_at", { ascending: false })
-          .limit(50);
+          .limit(100);
 
         if (activityError) throw activityError;
 
@@ -63,8 +94,8 @@ export default function CommunityActivityLog({ communityId }: Props) {
             )
           )
         );
-        const profileNames: Record<string, string> = {};
 
+        const profileNames: Record<string, string> = {};
         if (ids.length > 0) {
           const { data: profiles, error: profileError } = await supabase
             .from("profiles")
@@ -84,81 +115,139 @@ export default function CommunityActivityLog({ communityId }: Props) {
           setNames(profileNames);
         }
       } catch {
-        if (!cancelled) setError("Activity history could not be loaded.");
+        if (!cancelled) {
+          setError("Activity history could not be loaded. Refresh and try again.");
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     }
 
+    const handleRefresh = () => {
+      void loadActivities(true);
+    };
+
     void loadActivities();
+    window.addEventListener("community-activity-refresh", handleRefresh);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("community-activity-refresh", handleRefresh);
     };
   }, [communityId]);
 
+  function refresh() {
+    window.dispatchEvent(new Event("community-activity-refresh"));
+  }
+
+  const visibleActivities = activities.filter((activity) =>
+    matchesFilter(activity, filter)
+  );
+
   return (
-    <section className="community-activity">
-      <div className="community-activity__header">
+    <section className="section community-activity">
+      <div className="section-heading community-activity__header">
         <div>
-          <span className="community-activity__eyebrow">
-            COMMUNITY MANAGEMENT
-          </span>
+          <span className="eyebrow">COMMUNITY MANAGEMENT</span>
           <h2>Activity history</h2>
-          <p>Recent membership changes and decisions.</p>
+          <p className="muted">Recent membership changes, decisions, and role updates.</p>
         </div>
-        <span className="community-activity__count">
-          {activities.length} {activities.length === 1 ? "event" : "events"}
-        </span>
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={refresh}
+          disabled={loading || refreshing}
+        >
+          {refreshing ? "Refreshing..." : "Refresh history"}
+        </button>
+      </div>
+
+      <div className="hero-actions" role="group" aria-label="Filter activity history">
+        <button
+          className={filter === "all" ? "button button-primary" : "button button-secondary"}
+          type="button"
+          aria-pressed={filter === "all"}
+          onClick={() => setFilter("all")}
+        >
+          All ({activities.length})
+        </button>
+        <button
+          className={filter === "membership" ? "button button-primary" : "button button-secondary"}
+          type="button"
+          aria-pressed={filter === "membership"}
+          onClick={() => setFilter("membership")}
+        >
+          Membership ({activities.filter((activity) => !isRoleActivity(activity)).length})
+        </button>
+        <button
+          className={filter === "roles" ? "button button-primary" : "button button-secondary"}
+          type="button"
+          aria-pressed={filter === "roles"}
+          onClick={() => setFilter("roles")}
+        >
+          Role changes ({activities.filter(isRoleActivity).length})
+        </button>
       </div>
 
       {loading ? (
-        <p className="community-activity__message">Loading activity history...</p>
+        <p className="muted" aria-live="polite">Loading activity history...</p>
       ) : error ? (
-        <p className="community-activity__message" role="alert">{error}</p>
-      ) : activities.length === 0 ? (
-        <div className="community-activity__empty">
-          <h3>No activity recorded yet</h3>
-          <p>Membership changes will appear here after they are recorded.</p>
+        <article className="feature-card" role="alert">
+          <p>{error}</p>
+          <button className="button button-secondary" type="button" onClick={refresh}>
+            Try again
+          </button>
+        </article>
+      ) : visibleActivities.length === 0 ? (
+        <div className="empty-state">
+          <h3>{activities.length === 0 ? "No activity recorded yet" : "No events in this filter"}</h3>
+          <p>
+            {activities.length === 0
+              ? "Membership changes and decisions will appear here when recorded."
+              : "Choose another filter to see more activity."}
+          </p>
         </div>
       ) : (
         <div className="community-activity__list">
-          {activities.map((activity) => {
-            const isRemoval = activity.activity_type === "member_removed";
-            const isRoleChange = activity.activity_type === "member_role_changed";
+          {visibleActivities.map((activity) => {
+            const type = activity.activity_type;
+            const isRemoval = type === "member_removed" || type === "membership_rejected";
+            const isRoleChange = isRoleActivity(activity);
             const actorName = activity.actor_id
               ? names[activity.actor_id] || "Community manager"
               : "Former account";
             const targetName = activity.target_user_id
               ? names[activity.target_user_id] || "Community member"
               : "Unknown member";
+            const previousRole = activity.details?.previous_role;
+            const newRole = activity.details?.new_role;
 
             return (
               <article className="community-activity__item" key={activity.id}>
                 <span className="community-activity__marker" aria-hidden="true">
-                  {isRemoval ? "−" : isRoleChange ? "↔" : "+"}
+                  {isRoleChange ? "↔" : isRemoval ? "−" : "+"}
                 </span>
                 <div className="community-activity__content">
-                  <strong>
-                    {ACTIVITY_LABELS[activity.activity_type] || "Community activity"}
-                  </strong>
+                  <strong>{ACTIVITY_LABELS[type] || "Community activity"}</strong>
                   <p>
                     <b>{actorName}</b>
-                    {isRemoval
-                      ? " removed "
-                      : isRoleChange
-                        ? " changed the role of "
-                        : activity.activity_type === "membership_approved"
-                          ? " approved the request from "
-                          : activity.activity_type === "membership_rejected"
-                            ? " rejected the request from "
-                            : " added or updated "}
-                    <b>{targetName}</b>
-                    {isRoleChange && typeof activity.details?.new_role === "string"
-                      ? ` to ${activity.details.new_role}`
-                      : ""}
+                    {type === "member_added" && <> added <b>{targetName}</b> to the community.</>}
+                    {type === "member_removed" && <> removed <b>{targetName}</b> from the community.</>}
+                    {type === "membership_approved" && <> approved the membership request from <b>{targetName}</b>.</>}
+                    {type === "membership_rejected" && <> rejected the membership request from <b>{targetName}</b>.</>}
+                    {isRoleChange && (
+                      <> changed <b>{targetName}</b>&apos;s role
+                        {typeof previousRole === "string" && typeof newRole === "string"
+                          ? <> from <b>{previousRole}</b> to <b>{newRole}</b>.</>
+                          : "."}
+                      </>
+                    )}
                   </p>
                   <time dateTime={activity.created_at}>
-                    {new Date(activity.created_at).toLocaleString()}
+                    {formatTimestamp(activity.created_at)}
                   </time>
                 </div>
               </article>
