@@ -11,6 +11,7 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   "community_join_approved",
   "community_join_declined",
   "community_join_request",
+  "community_role_changed",
   "interest_received",
   "interest_approved",
   "interest_declined",
@@ -22,10 +23,7 @@ function sanitizeNotificationLink(link: string | null): string | null {
     return null;
   }
 
-  if (
-    link.includes("\\") ||
-    /[\u0000-\u001F\u007F]/.test(link)
-  ) {
+  if (link.includes("\\") || /[\u0000-\u001F\u007F]/.test(link)) {
     return null;
   }
 
@@ -71,7 +69,6 @@ export async function GET() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50),
-
     supabase
       .from("notifications")
       .select("id", { count: "exact", head: true })
