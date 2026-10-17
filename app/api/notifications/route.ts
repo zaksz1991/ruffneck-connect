@@ -18,6 +18,18 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   "new_message",
 ]);
 
+type NotificationRow = {
+  id: string;
+  actor_id: string | null;
+  notification_type: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
+};
+
 function sanitizeNotificationLink(link: string | null): string | null {
   if (!link || !link.startsWith("/") || link.startsWith("//")) {
     return null;
@@ -48,60 +60,67 @@ function sanitizeNotificationLink(link: string | null): string | null {
 }
 
 export async function GET() {
-  const supabase = await createClient();
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Authentication required." },
+        {
+          status: 401,
+          headers: { "Cache-Control": "no-store" },
+        }
+      );
+    }
 
-  if (authError || !user) {
-    return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 }
-    );
-  }
+    const [notificationsResult, unreadResult] = await Promise.all([
+      supabase
+        .from("notifications")
+        .select(NOTIFICATION_FIELDS)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false),
+    ]);
 
-  const [notificationsResult, unreadResult] = await Promise.all([
-    supabase
-      .from("notifications")
-      .select(NOTIFICATION_FIELDS)
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50),
-    supabase
-      .from("notifications")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("is_read", false),
-  ]);
+    if (notificationsResult.error) {
+      console.error(
+        "Failed to load notifications:",
+        notificationsResult.error.message
+      );
+      return NextResponse.json(
+        { error: "Unable to load notifications." },
+        {
+          status: 500,
+          headers: { "Cache-Control": "no-store" },
+        }
+      );
+    }
 
-  if (notificationsResult.error) {
-    console.error(
-      "Failed to load notifications:",
-      notificationsResult.error.message
-    );
+    if (unreadResult.error) {
+      console.error(
+        "Failed to count unread notifications:",
+        unreadResult.error.message
+      );
+      return NextResponse.json(
+        { error: "Unable to load notification counts." },
+        {
+          status: 500,
+          headers: { "Cache-Control": "no-store" },
+        }
+      );
+    }
 
-    return NextResponse.json(
-      { error: "Unable to load notifications." },
-      { status: 500 }
-    );
-  }
-
-  if (unreadResult.error) {
-    console.error(
-      "Failed to count unread notifications:",
-      unreadResult.error.message
-    );
-
-    return NextResponse.json(
-      { error: "Unable to retrieve unread notification count." },
-      { status: 500 }
-    );
-  }
-
-  const notifications = (notificationsResult.data ?? []).map(
-    (notification) => ({
+    const rows = (notificationsResult.data ?? []) as NotificationRow[];
+    const notifications = rows.map((notification) => ({
       ...notification,
       notification_type: ALLOWED_NOTIFICATION_TYPES.has(
         notification.notification_type
@@ -109,19 +128,29 @@ export async function GET() {
         ? notification.notification_type
         : "unknown",
       link: sanitizeNotificationLink(notification.link),
-    })
-  );
+    }));
 
-  return NextResponse.json(
-    {
-      notifications,
-      unread_count: unreadResult.count ?? 0,
-    },
-    {
-      headers: {
-        "Cache-Control": "private, no-store, max-age=0",
-        Vary: "Cookie",
+    return NextResponse.json(
+      {
+        notifications,
+        unread_count: unreadResult.count ?? 0,
       },
-    }
-  );
+      {
+        headers: { "Cache-Control": "no-store" },
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Unexpected notifications API error:",
+      error instanceof Error ? error.message : "Unknown error"
+    );
+
+    return NextResponse.json(
+      { error: "Unable to load notifications." },
+      {
+        status: 500,
+        headers: { "Cache-Control": "no-store" },
+      }
+    );
+  }
 }
