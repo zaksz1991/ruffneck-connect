@@ -26,6 +26,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   member_removed: "Removed a member",
   membership_approved: "Approved a membership request",
   membership_rejected: "Rejected a membership request",
+  member_role_changed: "Changed a member's role",
 };
 
 export default function CommunityActivityLog({ communityId }: Props) {
@@ -123,6 +124,7 @@ export default function CommunityActivityLog({ communityId }: Props) {
         <div className="community-activity__list">
           {activities.map((activity) => {
             const isRemoval = activity.activity_type === "member_removed";
+            const isRoleChange = activity.activity_type === "member_role_changed";
             const actorName = activity.actor_id
               ? names[activity.actor_id] || "Community manager"
               : "Former account";
@@ -133,7 +135,7 @@ export default function CommunityActivityLog({ communityId }: Props) {
             return (
               <article className="community-activity__item" key={activity.id}>
                 <span className="community-activity__marker" aria-hidden="true">
-                  {isRemoval ? "−" : "+"}
+                  {isRemoval ? "−" : isRoleChange ? "↔" : "+"}
                 </span>
                 <div className="community-activity__content">
                   <strong>
@@ -141,8 +143,19 @@ export default function CommunityActivityLog({ communityId }: Props) {
                   </strong>
                   <p>
                     <b>{actorName}</b>
-                    {isRemoval ? " removed " : " added or updated "}
+                    {isRemoval
+                      ? " removed "
+                      : isRoleChange
+                        ? " changed the role of "
+                        : activity.activity_type === "membership_approved"
+                          ? " approved the request from "
+                          : activity.activity_type === "membership_rejected"
+                            ? " rejected the request from "
+                            : " added or updated "}
                     <b>{targetName}</b>
+                    {isRoleChange && typeof activity.details?.new_role === "string"
+                      ? ` to ${activity.details.new_role}`
+                      : ""}
                   </p>
                   <time dateTime={activity.created_at}>
                     {new Date(activity.created_at).toLocaleString()}
