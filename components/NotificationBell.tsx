@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import {
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { useCallback, useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+
+type NotificationsSummary = {
+  unread_count?: unknown;
+  error?: string;
+};
 
 export default function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
+  const [supabase] = useState(() => createClient());
 
   const loadUnreadCount = useCallback(
     async (signal?: AbortSignal) => {
@@ -17,36 +20,22 @@ export default function NotificationBell() {
           method: "GET",
           cache: "no-store",
           credentials: "same-origin",
-          headers: {
-            Accept: "application/json",
-          },
+          headers: { Accept: "application/json" },
           signal,
         });
 
-        if (!response.ok) {
-          return;
-        }
+        if (!response.ok) return;
 
-        const result: { unread_count?: unknown } =
-          await response.json();
-
+        const result = (await response.json()) as NotificationsSummary;
         if (
           typeof result.unread_count === "number" &&
           Number.isFinite(result.unread_count)
         ) {
-          setUnreadCount(
-            Math.max(0, Math.floor(result.unread_count))
-          );
+          setUnreadCount(Math.max(0, Math.floor(result.unread_count)));
         }
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.name === "AbortError"
-        ) {
-          return;
-        }
-
-        // Preserve the current count if the request fails.
+        if (error instanceof Error && error.name === "AbortError") return;
+        // Keep the last known count if the API is temporarily unavailable.
       }
     },
     []
@@ -56,6 +45,7 @@ export default function NotificationBell() {
     let active = true;
     let inFlight = false;
     let controller: AbortController | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const refresh = async () => {
       if (
@@ -83,29 +73,56 @@ export default function NotificationBell() {
       }
     };
 
-    void refresh();
+    const subscribeToNotifications = async () => {
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
 
+        if (!active || error || !user) return;
+
+        channel = supabase
+          .channel(`notification-bell:${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${user.id}`,
+            },
+            () => {
+              void refresh();
+            }
+          )
+          .subscribe();
+      } catch {
+        // The polling fallback below keeps the count working without Realtime.
+      }
+    };
+
+    void refresh();
+    void subscribeToNotifications();
+
+    // Fallback refresh also covers projects where Realtime is not enabled.
     const interval = window.setInterval(() => {
       void refresh();
     }, 30_000);
 
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange
-    );
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       active = false;
       window.clearInterval(interval);
-
       document.removeEventListener(
         "visibilitychange",
         handleVisibilityChange
       );
-
       controller?.abort();
+      if (channel) void supabase.removeChannel(channel);
     };
-  }, [loadUnreadCount]);
+  }, [loadUnreadCount, supabase]);
 
   return (
     <Link
@@ -143,9 +160,7 @@ export default function NotificationBell() {
         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
         <path d="M10 21h4" />
       </svg>
-
       <span>Notifications</span>
-
       {unreadCount > 0 && (
         <span
           aria-hidden="true"
