@@ -6,13 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 
 type MembershipRequest = {
   user_id: string;
-  joined_at: string | null;
-};
-
-type MemberProfile = {
-  id: string;
   full_name: string | null;
   avatar_url: string | null;
+  joined_at: string | null;
 };
 
 type Props = {
@@ -39,59 +35,38 @@ export default function CommunityMembershipRequests({
 }: Props) {
   const router = useRouter();
   const [requests, setRequests] = useState<MembershipRequest[]>([]);
-  const [profiles, setProfiles] = useState<Record<string, MemberProfile>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [message, setMessage] = useState("");
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
-  const loadRequests = useCallback(async (cancelled?: () => boolean) => {
+  const loadRequests = useCallback(async (isCancelled?: () => boolean) => {
     setLoading(true);
     setLoadError("");
 
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("community_members")
-        .select("user_id, joined_at")
-        .eq("community_id", communityId)
-        .eq("status", "pending")
-        .order("joined_at", { ascending: true });
+      const { data, error } = await supabase.rpc(
+        "get_community_membership_requests",
+        { p_community_id: communityId }
+      );
 
       if (error) throw error;
 
-      const rows = (data ?? []) as MembershipRequest[];
-      const ids = [...new Set(rows.map((row) => row.user_id).filter(Boolean))];
-      const profileMap: Record<string, MemberProfile> = {};
-
-      if (ids.length > 0) {
-        const { data: profileRows, error: profileError } = await supabase
-          .from("profiles")
-          .select("id, full_name, avatar_url")
-          .in("id", ids);
-
-        if (!profileError && profileRows) {
-          for (const profile of profileRows as MemberProfile[]) {
-            profileMap[profile.id] = profile;
-          }
-        }
-      }
-
-      if (!cancelled?.()) {
-        setRequests(rows);
-        setProfiles(profileMap);
+      if (!isCancelled?.()) {
+        setRequests((data ?? []) as MembershipRequest[]);
       }
     } catch (error) {
-      if (!cancelled?.()) {
+      if (!isCancelled?.()) {
         setLoadError(
           error instanceof Error
             ? error.message
-            : "Pending requests could not be loaded. Check membership table permissions."
+            : "Pending requests could not be loaded."
         );
       }
     } finally {
-      if (!cancelled?.()) setLoading(false);
+      if (!isCancelled?.()) setLoading(false);
     }
   }, [communityId]);
 
@@ -121,8 +96,13 @@ export default function CommunityMembershipRequests({
 
       if (error) throw error;
 
-      const name = profiles[userId]?.full_name?.trim() || "The applicant";
-      setRequests((current) => current.filter((request) => request.user_id !== userId));
+      const name =
+        requests.find((request) => request.user_id === userId)?.full_name?.trim() ||
+        "The applicant";
+
+      setRequests((current) =>
+        current.filter((request) => request.user_id !== userId)
+      );
       setMessage(
         approved
           ? `${name} was approved and added to the community.`
@@ -150,7 +130,7 @@ export default function CommunityMembershipRequests({
             Review people who have asked to join this community.
           </p>
         </div>
-        <span className="status-badge status-pending">
+        <span className="status-badge status-pending" aria-live="polite">
           {requests.length} pending
         </span>
       </div>
@@ -180,8 +160,8 @@ export default function CommunityMembershipRequests({
           </button>
         </article>
       ) : loading ? (
-        <article className="feature-card">
-          <p className="muted">Loading membership requests…</p>
+        <article className="feature-card" aria-live="polite">
+          <p className="muted">Loading membership requests...</p>
         </article>
       ) : requests.length === 0 ? (
         <article className="feature-card">
@@ -193,25 +173,35 @@ export default function CommunityMembershipRequests({
       ) : (
         <div className="member-list">
           {requests.map((request) => {
-            const profile = profiles[request.user_id];
-            const name = profile?.full_name?.trim() || "RuffNeck member";
+            const name = request.full_name?.trim() || "RuffNeck member";
             const busy = busyUserId === request.user_id;
 
             return (
               <article className="feature-card member-card" key={request.user_id}>
                 <div className="member-card-profile">
-                  {profile?.avatar_url ? (
+                  {request.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img className="member-avatar" src={profile.avatar_url} alt="" />
+                    <img
+                      className="member-avatar"
+                      src={request.avatar_url}
+                      alt=""
+                    />
                   ) : (
-                    <div className="member-avatar member-avatar-fallback" aria-hidden="true">
+                    <div
+                      className="member-avatar member-avatar-fallback"
+                      aria-hidden="true"
+                    >
                       {name.charAt(0).toUpperCase()}
                     </div>
                   )}
                   <div className="member-details">
                     <h3>{name}</h3>
-                    <p className="muted">Requested {formatRequestDate(request.joined_at)}</p>
-                    <span className="status-badge status-pending">Awaiting review</span>
+                    <p className="muted">
+                      Requested {formatRequestDate(request.joined_at)}
+                    </p>
+                    <span className="status-badge status-pending">
+                      Awaiting review
+                    </span>
                   </div>
                 </div>
 
@@ -219,18 +209,18 @@ export default function CommunityMembershipRequests({
                   <button
                     className="button button-primary"
                     type="button"
-                    disabled={busy || busyUserId !== null}
+                    disabled={busyUserId !== null}
                     onClick={() => void decide(request.user_id, true)}
                   >
-                    {busy ? "Saving…" : "Approve"}
+                    {busy ? "Saving..." : "Approve"}
                   </button>
                   <button
                     className="button button-secondary"
                     type="button"
-                    disabled={busy || busyUserId !== null}
+                    disabled={busyUserId !== null}
                     onClick={() => void decide(request.user_id, false)}
                   >
-                    Reject
+                    {busy ? "Saving..." : "Reject"}
                   </button>
                 </div>
               </article>
