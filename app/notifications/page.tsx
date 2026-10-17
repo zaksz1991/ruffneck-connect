@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type Notification = {
   id: string;
@@ -94,6 +95,7 @@ export default function NotificationsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [supabase] = useState(() => createClient());
 
   const updating = markingAll || updatingIds.length > 0;
 
@@ -139,6 +141,81 @@ export default function NotificationsPage() {
   useEffect(() => {
     void loadNotifications();
   }, [loadNotifications]);
+
+  // Subscribe to this user's notification rows. The polling fallback also
+  // refreshes the page if Realtime is unavailable or temporarily disconnected.
+  useEffect(() => {
+    let active = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let debounceTimer: number | null = null;
+
+    const refreshIfVisible = () => {
+      if (active && document.visibilityState !== "hidden") {
+        void loadNotifications(true);
+      }
+    };
+
+    const scheduleRefresh = () => {
+      if (!active) return;
+      if (debounceTimer !== null) {
+        window.clearTimeout(debounceTimer);
+      }
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null;
+        refreshIfVisible();
+      }, 350);
+    };
+
+    const subscribe = async () => {
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (!active || authError || !user) return;
+
+        channel = supabase
+          .channel(`notifications-page:${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${user.id}`,
+            },
+            scheduleRefresh
+          )
+          .subscribe((status) => {
+            if (status === "SUBSCRIBED" && active) {
+              scheduleRefresh();
+            }
+          });
+      } catch {
+        // Periodic polling remains available if Realtime setup fails.
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshIfVisible();
+      }
+    };
+
+    void subscribe();
+
+    const interval = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [loadNotifications, supabase]);
 
   const markAsRead = useCallback(
     async (notificationId?: string): Promise<boolean> => {
