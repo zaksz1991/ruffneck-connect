@@ -18,18 +18,6 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   "new_message",
 ]);
 
-type NotificationRow = {
-  id: string;
-  actor_id: string | null;
-  notification_type: string;
-  title: string;
-  body: string | null;
-  link: string | null;
-  is_read: boolean;
-  created_at: string;
-  read_at: string | null;
-};
-
 function sanitizeNotificationLink(link: string | null): string | null {
   if (!link || !link.startsWith("/") || link.startsWith("//")) {
     return null;
@@ -59,6 +47,10 @@ function sanitizeNotificationLink(link: string | null): string | null {
   }
 }
 
+function noStoreHeaders() {
+  return { "Cache-Control": "no-store, max-age=0" };
+}
+
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -70,14 +62,11 @@ export async function GET() {
     if (authError || !user) {
       return NextResponse.json(
         { error: "Authentication required." },
-        {
-          status: 401,
-          headers: { "Cache-Control": "no-store" },
-        }
+        { status: 401, headers: noStoreHeaders() }
       );
     }
 
-    const [notificationsResult, unreadResult] = await Promise.all([
+    const [notificationResult, unreadResult] = await Promise.all([
       supabase
         .from("notifications")
         .select(NOTIFICATION_FIELDS)
@@ -91,43 +80,24 @@ export async function GET() {
         .eq("is_read", false),
     ]);
 
-    if (notificationsResult.error) {
+    if (notificationResult.error || unreadResult.error) {
       console.error(
         "Failed to load notifications:",
-        notificationsResult.error.message
+        notificationResult.error?.message ?? unreadResult.error?.message
       );
       return NextResponse.json(
         { error: "Unable to load notifications." },
-        {
-          status: 500,
-          headers: { "Cache-Control": "no-store" },
-        }
+        { status: 500, headers: noStoreHeaders() }
       );
     }
 
-    if (unreadResult.error) {
-      console.error(
-        "Failed to count unread notifications:",
-        unreadResult.error.message
-      );
-      return NextResponse.json(
-        { error: "Unable to load notification counts." },
-        {
-          status: 500,
-          headers: { "Cache-Control": "no-store" },
-        }
-      );
-    }
-
-    const rows = (notificationsResult.data ?? []) as NotificationRow[];
-    const notifications = rows.map((notification) => ({
-      ...notification,
-      notification_type: ALLOWED_NOTIFICATION_TYPES.has(
-        notification.notification_type
-      )
-        ? notification.notification_type
+    const notifications = (notificationResult.data ?? []).map((item) => ({
+      ...item,
+      notification_type: ALLOWED_NOTIFICATION_TYPES.has(item.notification_type)
+        ? item.notification_type
         : "unknown",
-      link: sanitizeNotificationLink(notification.link),
+      link: sanitizeNotificationLink(item.link),
+      is_read: Boolean(item.is_read),
     }));
 
     return NextResponse.json(
@@ -135,9 +105,7 @@ export async function GET() {
         notifications,
         unread_count: unreadResult.count ?? 0,
       },
-      {
-        headers: { "Cache-Control": "no-store" },
-      }
+      { headers: noStoreHeaders() }
     );
   } catch (error) {
     console.error(
@@ -147,10 +115,7 @@ export async function GET() {
 
     return NextResponse.json(
       { error: "Unable to load notifications." },
-      {
-        status: 500,
-        headers: { "Cache-Control": "no-store" },
-      }
+      { status: 500, headers: noStoreHeaders() }
     );
   }
 }
