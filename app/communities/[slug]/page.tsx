@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,31 @@ type Intent = {
   created_at: string;
 };
 
-export default async function CommunityDetailsPage({ params }: PageProps) {
+type CommunityMember = {
+  user_id: string;
+  role: string;
+  status: string;
+  joined_at: string;
+};
+
+type MemberProfile = {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  show_in_directory: boolean;
+};
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-NG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+export default async function CommunityDetailsPage({
+  params,
+}: PageProps) {
   const { slug } = await params;
   const supabase = await createClient();
 
@@ -41,9 +66,7 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(
-      `/login?next=${encodeURIComponent(`/communities/${slug}`)}`
-    );
+    redirect(`/login?next=${encodeURIComponent(`/communities/${slug}`)}`);
   }
 
   const { data: communityData, error } = await supabase
@@ -77,6 +100,11 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
   const isMember = membership?.status === "active";
   const isPending = membership?.status === "pending";
 
+  const isModerator =
+    isMember && membership?.role === "moderator";
+
+  const canManageMembers = isOwner || isModerator;
+
   const { count: memberCount } = await supabase
     .from("community_members")
     .select("*", { count: "exact", head: true })
@@ -107,12 +135,208 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
 
   const ownerName = profile?.full_name || "Community owner";
 
-  const formatDate = (value: string) =>
-    new Intl.DateTimeFormat("en-NG", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(new Date(value));
+  // Retrieve active members and their visible profile information.
+  let members: CommunityMember[] = [];
+  let memberProfiles: MemberProfile[] = [];
+
+  if (isMember || isOwner) {
+    const { data: memberData } = await supabase
+      .from("community_members")
+      .select("user_id, role, status, joined_at")
+      .eq("community_id", community.id)
+      .eq("status", "active")
+      .order("joined_at", { ascending: true });
+
+    members = (memberData ?? []) as CommunityMember[];
+
+    const memberIds = [
+      ...new Set([
+        community.owner_id,
+        ...members.map((member) => member.user_id),
+      ]),
+    ];
+
+    if (memberIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, full_name, avatar_url, show_in_directory")
+        .in("id", memberIds);
+
+      memberProfiles = (profiles ?? []) as MemberProfile[];
+    }
+  }
+
+  // Only owners and active moderators can load candidates for the add form.
+  let availableProfiles: MemberProfile[] = [];
+
+  if (canManageMembers) {
+    const existingIds = new Set([
+      community.owner_id,
+      ...members.map((member) => member.user_id),
+    ]);
+
+    const { data: directoryProfiles } = await supabase
+      .from("profiles")
+      .select("id, full_name, avatar_url, show_in_directory")
+      .eq("show_in_directory", true)
+      .order("full_name", { ascending: true })
+      .limit(200);
+
+    availableProfiles = ((directoryProfiles ?? []) as MemberProfile[])
+      .filter((candidate) => !existingIds.has(candidate.id));
+  }
+
+  const profileById = new Map(
+    memberProfiles.map((memberProfile) => [
+      memberProfile.id,
+      memberProfile,
+    ])
+  );
+
+  const communityPath = `/communities/${community.slug}`;
+
+  async function addMember(formData: FormData) {
+    "use server";
+
+    const serverSupabase = await createClient();
+
+    const {
+      data: { user: actor },
+    } = await serverSupabase.auth.getUser();
+
+    if (!actor) {
+      redirect(
+        `/login?next=${encodeURIComponent(communityPath)}`
+      );
+    }
+
+    const { data: currentCommunity } = await serverSupabase
+      .from("communities")
+      .select("id, owner_id, slug")
+      .eq("id", community.id)
+      .maybeSingle();
+
+    if (!currentCommunity) {
+      redirect("/communities");
+    }
+
+    if (currentCommunity.owner_id !== actor.id) {
+      const { data: actorMembership } = await serverSupabase
+        .from("community_members")
+        .select("role, status")
+        .eq("community_id", community.id)
+        .eq("user_id", actor.id)
+        .maybeSingle();
+
+      if (
+        actorMembership?.role !== "moderator" ||
+        actorMembership.status !== "active"
+      ) {
+        throw new Error("You are not authorized to manage this community.");
+      }
+    }
+
+    const targetUserId = String(formData.get("user_id") ?? "").trim();
+
+    if (!targetUserId) {
+      redirect(`${communityPath}?member_error=select_user`);
+    }
+
+    if (targetUserId === actor.id) {
+      redirect(`${communityPath}?member_error=already_member`);
+    }
+
+    const { data: candidate } = await serverSupabase
+      .from("profiles")
+      .select("id, show_in_directory")
+      .eq("id", targetUserId)
+      .eq("show_in_directory", true)
+      .maybeSingle();
+
+    if (!candidate) {
+      redirect(`${communityPath}?member_error=user_unavailable`);
+    }
+
+    const { error: addError } = await serverSupabase.rpc(
+      "admin_add_community_member",
+      {
+        p_community_id: community.id,
+        p_user_id: targetUserId,
+      }
+    );
+
+    if (addError) {
+      console.error("Add community member failed:", addError.message);
+      redirect(`${communityPath}?member_error=add_failed`);
+    }
+
+    revalidatePath(communityPath);
+    redirect(`${communityPath}?member_success=added`);
+  }
+
+  async function removeMember(formData: FormData) {
+    "use server";
+
+    const serverSupabase = await createClient();
+
+    const {
+      data: { user: actor },
+    } = await serverSupabase.auth.getUser();
+
+    if (!actor) {
+      redirect(
+        `/login?next=${encodeURIComponent(communityPath)}`
+      );
+    }
+
+    const { data: currentCommunity } = await serverSupabase
+      .from("communities")
+      .select("id, owner_id")
+      .eq("id", community.id)
+      .maybeSingle();
+
+    if (!currentCommunity) {
+      redirect("/communities");
+    }
+
+    if (currentCommunity.owner_id !== actor.id) {
+      const { data: actorMembership } = await serverSupabase
+        .from("community_members")
+        .select("role, status")
+        .eq("community_id", community.id)
+        .eq("user_id", actor.id)
+        .maybeSingle();
+
+      if (
+        actorMembership?.role !== "moderator" ||
+        actorMembership.status !== "active"
+      ) {
+        throw new Error("You are not authorized to manage this community.");
+      }
+    }
+
+    const targetUserId = String(formData.get("user_id") ?? "").trim();
+
+    if (!targetUserId || targetUserId === currentCommunity.owner_id) {
+      redirect(`${communityPath}?member_error=invalid_target`);
+    }
+
+    const { error: removeError } = await serverSupabase.rpc(
+      "admin_remove_community_member",
+      {
+        p_community_id: community.id,
+        p_user_id: targetUserId,
+      }
+    );
+
+    if (removeError) {
+      console.error("Remove community member failed:", removeError.message);
+      redirect(`${communityPath}?member_error=remove_failed`);
+    }
+
+    revalidatePath(communityPath);
+    redirect(`${communityPath}?member_success=removed`);
+  }
 
   return (
     <main className="page-shell">
@@ -133,7 +357,9 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
             {community.location_label && (
               <span>{community.location_label}</span>
             )}
+
             <span>{memberCount ?? 0} members</span>
+
             <span>
               {community.visibility === "public" ? "Public" : "Private"}
             </span>
@@ -143,7 +369,7 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
             {isMember && (
               <Link
                 className="button button-primary"
-                href={`/intents/new?type=need`}
+                href="/intents/new?type=need"
               >
                 Publish an intention
               </Link>
@@ -187,6 +413,152 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
         </div>
       </section>
 
+      {(isMember || isOwner) && (
+        <section className="section">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">YOUR NETWORK</span>
+              <h2>Community members</h2>
+              <p className="muted">
+                Meet the people in {community.name}.
+              </p>
+            </div>
+
+            <span className="status-badge status-active">
+              {memberCount ?? 0} active members
+            </span>
+          </div>
+
+          <div className="member-management-grid">
+            <div className="member-list">
+              {members.length === 0 ? (
+                <article className="feature-card">
+                  <h3>No active members yet</h3>
+                  <p>Community members will appear here.</p>
+                </article>
+              ) : (
+                members.map((member) => {
+                  const memberProfile = profileById.get(member.user_id);
+                  const isTargetOwner =
+                    member.user_id === community.owner_id;
+                  const displayName =
+                    memberProfile?.full_name ||
+                    (isTargetOwner ? ownerName : "RuffNeck member");
+
+                  return (
+                    <article
+                      className="feature-card member-card"
+                      key={member.user_id}
+                    >
+                      <div className="member-card-profile">
+                        {memberProfile?.avatar_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            className="member-avatar"
+                            src={memberProfile.avatar_url}
+                            alt=""
+                          />
+                        ) : (
+                          <div className="member-avatar member-avatar-fallback">
+                            {displayName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+
+                        <div className="member-details">
+                          <h3>{displayName}</h3>
+                          <p className="muted">
+                            Joined {formatDate(member.joined_at)}
+                          </p>
+
+                          <span
+                            className={`member-role role-${member.role}`}
+                          >
+                            {member.role}
+                          </span>
+                        </div>
+                      </div>
+
+                      {canManageMembers &&
+                        !isTargetOwner &&
+                        (isOwner || member.role === "member") && (
+                          <form action={removeMember}>
+                            <input
+                              type="hidden"
+                              name="user_id"
+                              value={member.user_id}
+                            />
+
+                            <button
+                              className="button button-secondary"
+                              type="submit"
+                              formAction={removeMember}
+                            >
+                              Remove member
+                            </button>
+                          </form>
+                        )}
+                    </article>
+                  );
+                })
+              )}
+            </div>
+
+            {canManageMembers && (
+              <aside className="feature-card add-member-panel">
+                <span className="eyebrow">ADMINISTRATION</span>
+                <h3>Add a member</h3>
+
+                <p className="muted">
+                  Select an existing user who has chosen to appear in the
+                  public member directory.
+                </p>
+
+                {availableProfiles.length === 0 ? (
+                  <p className="muted">
+                    No eligible directory users are available to add right now.
+                  </p>
+                ) : (
+                  <form action={addMember} className="add-member-form">
+                    <label htmlFor="community-user-id">
+                      Select a member
+                    </label>
+
+                    <select
+                      id="community-user-id"
+                      name="user_id"
+                      required
+                      defaultValue=""
+                    >
+                      <option value="" disabled>
+                        Choose a user
+                      </option>
+
+                      {availableProfiles.map((candidate) => (
+                        <option key={candidate.id} value={candidate.id}>
+                          {candidate.full_name || "RuffNeck member"}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      className="button button-primary"
+                      type="submit"
+                    >
+                      Add to community
+                    </button>
+                  </form>
+                )}
+
+                <p className="muted member-permission-note">
+                  Owners and active moderators can add members. Only owners
+                  can remove moderators.
+                </p>
+              </aside>
+            )}
+          </div>
+        </section>
+      )}
+
       <section className="section">
         <div className="section-heading">
           <div>
@@ -198,20 +570,24 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
         <div className="grid-2">
           <article className="feature-card">
             <h3>Community details</h3>
+
             <p>
               <strong>Created by:</strong> {ownerName}
             </p>
+
             <p>
               <strong>Created:</strong> {formatDate(community.created_at)}
             </p>
+
             <p>
-              <strong>Category:</strong>{" "}
-              {community.category || "General"}
+              <strong>Category:</strong> {community.category || "General"}
             </p>
+
             <p>
               <strong>Location:</strong>{" "}
               {community.location_label || "Not specified"}
             </p>
+
             <p>
               <strong>Membership:</strong>{" "}
               {community.join_approval_required
@@ -222,10 +598,12 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
 
           <article className="feature-card">
             <h3>Community purpose</h3>
+
             <p>
               Use this space to share needs, contribute skills and resources,
               and find people interested in building useful projects together.
             </p>
+
             {!isMember && !isOwner && (
               <p className="muted">
                 Join the community to participate in its intentions.
@@ -257,7 +635,9 @@ export default async function CommunityDetailsPage({ params }: PageProps) {
           {intents.length === 0 ? (
             <div className="empty-state">
               <h3>No open intentions yet</h3>
-              <p>Be the first to share an opportunity with this community.</p>
+              <p>
+                Be the first to share an opportunity with this community.
+              </p>
             </div>
           ) : (
             <div className="grid-3">
