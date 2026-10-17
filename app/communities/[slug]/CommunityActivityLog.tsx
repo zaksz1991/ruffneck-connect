@@ -12,11 +12,16 @@ details: Record<string, unknown>;
 created_at: string;
 };
 
+type Profile = {
+id: string;
+full_name: string | null;
+};
+
 type Props = {
 communityId: string;
 };
 
-const ACTIVITY_LABELS: Record<string, string> = {
+const LABELS: Record<string, string> = {
 member_added: "Added a member",
 member_removed: "Removed a member",
 membership_approved: "Approved a membership request",
@@ -27,6 +32,7 @@ export default function CommunityActivityLog({
 communityId,
 }: Props) {
 const [activities, setActivities] = useState<Activity[]>([]);
+const [names, setNames] = useState<Record<string, string>>({});
 const [loading, setLoading] = useState(true);
 const [error, setError] = useState("");
 
@@ -40,7 +46,7 @@ async function loadActivities() {
   try {
     const supabase = createClient();
 
-    const { data, error: queryError } = await supabase
+    const { data, error: activityError } = await supabase
       .from("community_activity_logs")
       .select(
         "id, actor_id, target_user_id, activity_type, details, created_at"
@@ -49,10 +55,43 @@ async function loadActivities() {
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (queryError) throw queryError;
+    if (activityError) throw activityError;
+
+    const rows = (data ?? []) as Activity[];
+    const ids = Array.from(
+      new Set(
+        rows.flatMap((row) =>
+          [row.actor_id, row.target_user_id].filter(
+            (id): id is string => Boolean(id)
+          )
+        )
+      )
+    );
+
+    let profileNames: Record<string, string> = {};
+
+    if (ids.length > 0) {
+      const { data: profiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", ids);
+
+      if (profileError) {
+        // Keep the activity log usable if profile access is restricted.
+        profileNames = {};
+      } else {
+        profileNames = Object.fromEntries(
+          ((profiles ?? []) as Profile[]).map((profile) => [
+            profile.id,
+            profile.full_name?.trim() || "Community member",
+          ])
+        );
+      }
+    }
 
     if (!cancelled) {
-      setActivities((data ?? []) as Activity[]);
+      setActivities(rows);
+      setNames(profileNames);
     }
   } catch {
     if (!cancelled) {
@@ -73,11 +112,11 @@ return () => {
 }, [communityId]);
 
 return ( <section className="community-activity"> <div className="community-activity__header"> <div> <span className="community-activity__eyebrow">
-COMMUNITY MANAGEMENT </span> <h2>Activity history</h2> <p>Recent membership changes in this community.</p> </div>
+COMMUNITY MANAGEMENT </span> <h2>Activity history</h2> <p>Recent membership changes and decisions.</p> </div>
 
 ```
     <span className="community-activity__count">
-      {activities.length} events
+      {activities.length} {activities.length === 1 ? "event" : "events"}
     </span>
   </div>
 
@@ -93,44 +132,51 @@ COMMUNITY MANAGEMENT </span> <h2>Activity history</h2> <p>Recent membership chan
     <div className="community-activity__empty">
       <h3>No activity recorded yet</h3>
       <p>
-        Membership changes recorded after audit logging was enabled
-        will appear here.
+        New membership changes will appear here once they have been
+        recorded.
       </p>
     </div>
   ) : (
     <div className="community-activity__list">
-      {activities.map((activity) => (
-        <article
-          className="community-activity__item"
-          key={activity.id}
-        >
-          <span
-            className="community-activity__marker"
-            aria-hidden="true"
+      {activities.map((activity) => {
+        const removed = activity.activity_type === "member_removed";
+        const actor = activity.actor_id
+          ? names[activity.actor_id] || "Community manager"
+          : "Former account";
+        const target = activity.target_user_id
+          ? names[activity.target_user_id] || "Community member"
+          : "Unknown member";
+
+        return (
+          <article
+            className="community-activity__item"
+            key={activity.id}
           >
-            {activity.activity_type === "member_removed"
-              ? "−"
-              : "＋"}
-          </span>
-
-          <div className="community-activity__content">
-            <strong>
-              {ACTIVITY_LABELS[activity.activity_type] ??
-                "Community activity"}
-            </strong>
-
-            <p>
-              {activity.target_user_id
-                ? `Member ID: ${activity.target_user_id}`
-                : "No member specified"}
-            </p>
-
-            <span>
-              {new Date(activity.created_at).toLocaleString()}
+            <span
+              className="community-activity__marker"
+              aria-hidden="true"
+            >
+              {removed ? "−" : "+"}
             </span>
-          </div>
-        </article>
-      ))}
+
+            <div className="community-activity__content">
+              <strong>
+                {LABELS[activity.activity_type] || "Community activity"}
+              </strong>
+
+              <p>
+                <b>{actor}</b>
+                {removed ? " removed " : " added or updated "}
+                <b>{target}</b>
+              </p>
+
+              <time dateTime={activity.created_at}>
+                {new Date(activity.created_at).toLocaleString()}
+              </time>
+            </div>
+          </article>
+        );
+      })}
     </div>
   )}
 </section>
