@@ -1,0 +1,31 @@
+RUFFNECK CONNECT — COMMUNITY MEMBER DIRECTORY SEARCH
+
+1. Add this import near the other imports in app/communities/[slug]/page.tsx:
+
+import CommunityMemberDirectory from "./CommunityMemberDirectory";
+
+2. In the same file, find the existing <div className="member-list"> that renders members inside <div className="member-management-grid">.
+Replace that entire member-list div, including its contents and closing div, with:
+
+<CommunityMemberDirectory
+  members={members.map((member) => {
+    const memberProfile = profileById.get(member.user_id);
+    return {
+      ...member,
+      full_name: memberProfile?.full_name ?? null,
+      avatar_url: memberProfile?.avatar_url ?? null,
+    };
+  })}
+  ownerId={community.owner_id}
+  isOwner={isOwner}
+  canManageMembers={canManageMembers}
+  removeMember={removeMember}
+  setMemberRole={setMemberRole}
+/>
+
+3. Keep the existing {canManageMembers && (... add-member-panel ...)} aside directly after the component. Do not delete it.
+
+4. Add the downloaded component as:
+app/communities/[slug]/CommunityMemberDirectory.tsx
+
+The new component adds member name/role search, role filtering, sorting by name or join date, and confirmation prompts before removal or role changes. It preserves the existing owner/moderator permissions and server actions.
