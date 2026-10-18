@@ -479,6 +479,13 @@ export default async function CommunityDetailsPage({
             <Link className="button button-secondary" href="/communities">
               All communities
             </Link>
+
+            {community.visibility === "public" && (
+              <CommunityShareButton
+                slug={community.slug}
+                name={community.name}
+              />
+            )}
           </div>
         </div>
       </section>
