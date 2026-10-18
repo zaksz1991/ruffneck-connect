@@ -53,6 +53,7 @@ type CommunityMember = {
 type MemberProfile = {
   id: string;
   full_name: string | null;
+  email: string | null;
   avatar_url: string | null;
   show_in_directory: boolean;
 };
@@ -63,6 +64,13 @@ function formatDate(value: string) {
     month: "long",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function formatProfileOption(profile: MemberProfile) {
+  const name = profile.full_name?.trim() || "RuffNeck member";
+  const email = profile.email?.trim();
+
+  return email ? `${name} — ${email}` : name;
 }
 
 const MEMBER_SUCCESS_MESSAGES: Record<string, string> = {
@@ -143,7 +151,6 @@ export default async function CommunityDetailsPage({
   const isMember = membership?.status === "active";
   const isPending = membership?.status === "pending";
   const isModerator = isMember && membership?.role === "moderator";
-
   const canManageMembers = isOwner || isModerator;
 
   const { count: memberCount } = await supabase
@@ -199,7 +206,7 @@ export default async function CommunityDetailsPage({
     if (memberIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url, show_in_directory")
+        .select("id, full_name, email, avatar_url, show_in_directory")
         .in("id", memberIds);
 
       memberProfiles = (profiles ?? []) as MemberProfile[];
@@ -216,14 +223,23 @@ export default async function CommunityDetailsPage({
 
     const { data: directoryProfiles } = await supabase
       .from("profiles")
-      .select("id, full_name, avatar_url, show_in_directory")
+      .select("id, full_name, email, avatar_url, show_in_directory")
       .eq("show_in_directory", true)
       .order("full_name", { ascending: true })
       .limit(200);
 
+    const seenIds = new Set<string>();
+
     availableProfiles = (
       (directoryProfiles ?? []) as MemberProfile[]
-    ).filter((candidate) => !existingIds.has(candidate.id));
+    ).filter((candidate) => {
+      if (existingIds.has(candidate.id) || seenIds.has(candidate.id)) {
+        return false;
+      }
+
+      seenIds.add(candidate.id);
+      return true;
+    });
   }
 
   const profileById = new Map(
@@ -387,6 +403,16 @@ export default async function CommunityDetailsPage({
       redirect(`/login?next=${encodeURIComponent(communityPath)}`);
     }
 
+    const { data: currentCommunity } = await serverSupabase
+      .from("communities")
+      .select("id, owner_id")
+      .eq("id", community.id)
+      .maybeSingle();
+
+    if (!currentCommunity || currentCommunity.owner_id !== actor.id) {
+      redirect(`${communityPath}?member_error=role_change_failed`);
+    }
+
     const targetUserId = String(formData.get("user_id") ?? "").trim();
     const newRole = String(formData.get("new_role") ?? "").trim();
 
@@ -516,7 +542,6 @@ export default async function CommunityDetailsPage({
         </section>
       )}
 
-      {/* Community owner controls */}
       {isOwner && (
         <CommunityManagementControls
           community={{
@@ -709,7 +734,7 @@ export default async function CommunityDetailsPage({
 
                       {availableProfiles.map((candidate) => (
                         <option key={candidate.id} value={candidate.id}>
-                          {candidate.full_name || "RuffNeck member"}
+                          {formatProfileOption(candidate)}
                         </option>
                       ))}
                     </select>
@@ -722,7 +747,7 @@ export default async function CommunityDetailsPage({
 
                 <p className="muted member-permission-note">
                   Owners and active moderators can add members. Only owners
-                  can remove moderators.
+                  can change member roles.
                 </p>
               </aside>
             )}
