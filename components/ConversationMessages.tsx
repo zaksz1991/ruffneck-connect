@@ -94,11 +94,11 @@ function sortAndLimit(messages: Message[]) {
   }
 
   return [...byId.values()].sort((left, right) => {
-    const timeDifference =
+    const difference =
       new Date(left.created_at).getTime() -
       new Date(right.created_at).getTime();
 
-    return timeDifference || left.id.localeCompare(right.id);
+    return difference || left.id.localeCompare(right.id);
   });
 }
 
@@ -134,6 +134,7 @@ function formatDate(value: string) {
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
+
   if (bytes < 1024 * 1024) {
     return `${(bytes / 1024).toFixed(1)} KB`;
   }
@@ -177,7 +178,7 @@ function validateAttachment(file: File): string | null {
   const allowedExtensions = ALLOWED_ATTACHMENT_TYPES[type];
 
   if (!allowedExtensions) {
-    return "This file type is not supported. Upload JPG, PNG, WebP, PDF, DOC, DOCX, or TXT files.";
+    return "Unsupported file type. Upload JPG, PNG, WebP, PDF, DOC, DOCX, or TXT.";
   }
 
   const extension = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
@@ -192,11 +193,7 @@ function validateAttachment(file: File): string | null {
 function getMessagePreview(body: string) {
   const attachment = parseChatAttachment(body);
 
-  if (attachment) {
-    return `Attachment: ${attachment.name}`;
-  }
-
-  return body;
+  return attachment ? `Attachment: ${attachment.name}` : body;
 }
 
 export default function ConversationMessages({
@@ -212,34 +209,12 @@ export default function ConversationMessages({
   );
 
   const [messageSearch, setMessageSearch] = useState("");
-
-  const filteredMessages = useMemo(() => {
-    const query = messageSearch.trim().toLocaleLowerCase();
-
-    if (!query) return messages;
-
-    return messages.filter((message) => {
-      const searchableBody = getMessagePreview(message.body);
-
-      return searchableBody.toLocaleLowerCase().includes(query);
-    });
-  }, [messages, messageSearch]);
-
   const [draft, setDraft] = useState("");
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const replyingToRef = useRef<Message | null>(null);
-
-  replyingToRef.current = replyingTo;
-
   const [sending, setSending] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(
-    null
-  );
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(
@@ -261,15 +236,15 @@ export default function ConversationMessages({
 
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
-
   const [hasMoreMessages, setHasMoreMessages] = useState(
     initialMessages.length >= 200
   );
-
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const replyingToRef = useRef<Message | null>(null);
 
   const pendingOlderScroll = useRef<{
     scrollHeight: number;
@@ -277,11 +252,7 @@ export default function ConversationMessages({
   } | null>(null);
 
   const shouldAutoScroll = useRef(true);
-
-  const reactionOverrides = useRef(
-    new Map<string, MessageReaction | null>()
-  );
-
+  const reactionOverrides = useRef(new Map<string, MessageReaction | null>());
   const liveOverridesRef = useRef(new Map<string, Message | null>());
 
   const visibleMessageIds = useMemo(
@@ -296,6 +267,7 @@ export default function ConversationMessages({
   );
 
   visibleMessageIdsRef.current = new Set(visibleMessageIds);
+  replyingToRef.current = replyingTo;
 
   const presenceChannelRef = useRef<
     ReturnType<typeof supabase.channel> | null
@@ -320,6 +292,16 @@ export default function ConversationMessages({
     [participants]
   );
 
+  const filteredMessages = useMemo(() => {
+    const query = messageSearch.trim().toLocaleLowerCase();
+
+    if (!query) return messages;
+
+    return messages.filter((message) =>
+      getMessagePreview(message.body).toLocaleLowerCase().includes(query)
+    );
+  }, [messages, messageSearch]);
+
   const reactionSummaries = useMemo(() => {
     const summaries = new Map<
       string,
@@ -328,19 +310,18 @@ export default function ConversationMessages({
 
     for (const reaction of reactionRows) {
       const key = `${reaction.message_id}|${reaction.emoji}`;
-
-      const existing = summaries.get(key) ?? {
+      const summary = summaries.get(key) ?? {
         count: 0,
         reactedByMe: false,
       };
 
-      existing.count += 1;
+      summary.count += 1;
 
       if (reaction.user_id === currentUserId) {
-        existing.reactedByMe = true;
+        summary.reactedByMe = true;
       }
 
-      summaries.set(key, existing);
+      summaries.set(key, summary);
     }
 
     return summaries;
@@ -357,14 +338,9 @@ export default function ConversationMessages({
       .eq("id", message.reply_to_message_id)
       .maybeSingle();
 
-    if (replyError || !data) {
-      return message;
-    }
+    if (replyError || !data) return message;
 
-    return {
-      ...message,
-      reply_to: data as ReplyPreview,
-    };
+    return { ...message, reply_to: data as ReplyPreview };
   }
 
   async function hydrateReplyPreviews(
@@ -380,9 +356,7 @@ export default function ConversationMessages({
       ),
     ];
 
-    if (targetIds.length === 0) {
-      return incomingMessages;
-    }
+    if (targetIds.length === 0) return incomingMessages;
 
     const { data, error: replyError } = await supabase
       .from("messages")
@@ -391,10 +365,7 @@ export default function ConversationMessages({
 
     if (replyError || !data) {
       if (replyError) {
-        console.error(
-          "Unable to load reply previews:",
-          replyError.message
-        );
+        console.error("Unable to load reply previews:", replyError.message);
       }
 
       return incomingMessages;
@@ -461,6 +432,68 @@ export default function ConversationMessages({
     }
   }
 
+  function sendTypingSignal(isTyping: boolean) {
+    const channel = presenceChannelRef.current;
+
+    if (!channel) return;
+
+    if (isTyping) {
+      const now = Date.now();
+
+      if (now - lastTypingBroadcastAtRef.current < 700) return;
+
+      lastTypingBroadcastAtRef.current = now;
+    }
+
+    void channel.send({
+      type: "broadcast",
+      event: "typing",
+      payload: {
+        user_id: currentUserId,
+        is_typing: isTyping,
+      },
+    });
+  }
+
+  function stopTyping() {
+    if (typingStopTimerRef.current) {
+      clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+
+    if (typingSignalActiveRef.current) {
+      sendTypingSignal(false);
+    }
+
+    typingSignalActiveRef.current = false;
+  }
+
+  function handleDraftChange(value: string) {
+    setDraft(value);
+
+    if (typingStopTimerRef.current) {
+      clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+
+    if (!value.trim()) {
+      stopTyping();
+      return;
+    }
+
+    typingSignalActiveRef.current = true;
+    sendTypingSignal(true);
+
+    typingStopTimerRef.current = setTimeout(() => {
+      if (typingSignalActiveRef.current) {
+        sendTypingSignal(false);
+      }
+
+      typingSignalActiveRef.current = false;
+      typingStopTimerRef.current = null;
+    }, 1600);
+  }
+
   async function sendAttachment(file: File) {
     if (sending || uploadingFile) return;
 
@@ -490,9 +523,7 @@ export default function ConversationMessages({
         });
 
       if (uploadError) {
-        throw new Error(
-          `File upload failed: ${uploadError.message}`
-        );
+        throw new Error(`File upload failed: ${uploadError.message}`);
       }
 
       uploadedPath = path;
@@ -505,10 +536,6 @@ export default function ConversationMessages({
           type: file.type,
           size: file.size,
         });
-
-      if (attachmentBody.length > MAX_MESSAGE_LENGTH) {
-        throw new Error("The attachment information is too large.");
-      }
 
       const response = await fetch(
         `/api/messages/${conversationId}/send`,
@@ -526,19 +553,14 @@ export default function ConversationMessages({
 
       if (!response.ok || !result.message) {
         throw new Error(
-          result.error || "The file uploaded but its message could not be sent."
+          result.error || "The attachment could not be sent."
         );
       }
 
-      const messageWithReply = await hydrateReplyPreview(
-        result.message as Message
-      );
+      const message = await hydrateReplyPreview(result.message);
 
       shouldAutoScroll.current = true;
-
-      setMessages((current) =>
-        mergeMessages(current, [messageWithReply])
-      );
+      setMessages((current) => mergeMessages(current, [message]));
 
       stopTyping();
       setReplyingTo(null);
@@ -584,17 +606,17 @@ export default function ConversationMessages({
     }
 
     async function loadReactions() {
-      const { data, error: reactionLoadError } = await supabase
+      const { data, error: reactionError } = await supabase
         .from("message_reactions")
         .select("message_id, user_id, emoji, created_at")
         .in("message_id", messageIds);
 
       if (cancelled) return;
 
-      if (reactionLoadError) {
+      if (reactionError) {
         console.error(
           "Unable to load message reactions:",
-          reactionLoadError.message
+          reactionError.message
         );
         return;
       }
@@ -610,10 +632,7 @@ export default function ConversationMessages({
       for (const [key, override] of reactionOverrides.current.entries()) {
         if (override === null) {
           byKey.delete(key);
-          continue;
-        }
-
-        if (override && visibleIds.has(override.message_id)) {
+        } else if (override && visibleIds.has(override.message_id)) {
           byKey.set(key, override);
         }
       }
@@ -630,7 +649,6 @@ export default function ConversationMessages({
 
   useEffect(() => {
     let disposed = false;
-
     const liveOverrides = liveOverridesRef.current;
     liveOverrides.clear();
 
@@ -656,32 +674,30 @@ export default function ConversationMessages({
         return;
       }
 
-      const latestRows = ((data ?? []) as Message[]).reverse();
-      const hydratedRows = await hydrateReplyPreviews(latestRows);
+      const rows = ((data ?? []) as Message[]).reverse();
+      const hydrated = await hydrateReplyPreviews(rows);
 
       if (disposed) return;
 
-      if (latestRows.length < 200) {
-        setHasMoreMessages(false);
-      }
+      if (rows.length < 200) setHasMoreMessages(false);
 
       setMessages((current) => {
-        const byId = new Map<string, Message>(
+        const byId = new Map(
           current.map((message) => [message.id, message])
         );
 
-        for (const message of hydratedRows) {
+        for (const message of hydrated) {
           byId.set(message.id, {
             ...byId.get(message.id),
             ...message,
           });
         }
 
-        for (const [messageId, message] of liveOverrides.entries()) {
+        for (const [id, message] of liveOverrides.entries()) {
           if (message) {
-            byId.set(messageId, message);
+            byId.set(id, message);
           } else {
-            byId.delete(messageId);
+            byId.delete(id);
           }
         }
 
@@ -692,22 +708,17 @@ export default function ConversationMessages({
     async function markConversationRead() {
       if (disposed || document.visibilityState !== "visible") return;
 
-      const { error: markReadError } = await supabase
+      const { error: readError } = await supabase
         .from("conversation_participants")
         .update({ last_read_at: new Date().toISOString() })
         .eq("conversation_id", conversationId)
         .eq("user_id", currentUserId)
         .eq("status", "active");
 
-      if (markReadError) {
-        console.error(
-          "Unable to update conversation read timestamp:",
-          markReadError.message
-        );
+      if (readError) {
+        console.error("Unable to update read timestamp:", readError.message);
       }
     }
-
-    void markConversationRead();
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -715,10 +726,9 @@ export default function ConversationMessages({
       }
     };
 
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange
-    );
+    void markConversationRead();
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const channel = supabase
       .channel(`conversation-messages-${conversationId}-${currentUserId}`)
@@ -736,7 +746,6 @@ export default function ConversationMessages({
           if (!incoming.id || incoming.deleted_at) return;
 
           const list = listRef.current;
-
           const distanceFromBottom = list
             ? list.scrollHeight - list.scrollTop - list.clientHeight
             : 0;
@@ -746,7 +755,6 @@ export default function ConversationMessages({
             distanceFromBottom < 160;
 
           liveOverrides.set(incoming.id, incoming);
-
           setMessages((current) => mergeMessages(current, [incoming]));
 
           if (incoming.reply_to_message_id) {
@@ -754,10 +762,7 @@ export default function ConversationMessages({
               if (disposed) return;
 
               liveOverrides.set(hydrated.id, hydrated);
-
-              setMessages((current) =>
-                mergeMessages(current, [hydrated])
-              );
+              setMessages((current) => mergeMessages(current, [hydrated]));
             });
           }
 
@@ -814,7 +819,7 @@ export default function ConversationMessages({
 
           liveOverrides.set(updated.id, updated);
 
-          const updatedReplySource: ReplyPreview = {
+          const updatedReply: ReplyPreview = {
             id: updated.id,
             sender_id: updated.sender_id,
             body: updated.body,
@@ -825,7 +830,7 @@ export default function ConversationMessages({
             mergeMessages(
               current.map((message) =>
                 message.reply_to_message_id === updated.id
-                  ? { ...message, reply_to: updatedReplySource }
+                  ? { ...message, reply_to: updatedReply }
                   : message
               ),
               [updated]
@@ -873,12 +878,9 @@ export default function ConversationMessages({
           if (
             !removed.message_id ||
             !removed.user_id ||
-            !removed.emoji
+            !removed.emoji ||
+            !visibleMessageIdsRef.current.has(removed.message_id)
           ) {
-            return;
-          }
-
-          if (!visibleMessageIdsRef.current.has(removed.message_id)) {
             return;
           }
 
@@ -927,7 +929,7 @@ export default function ConversationMessages({
       participantIdsKey.split(",").filter(Boolean)
     );
 
-    const remoteTypingTimers = remoteTypingTimersRef.current;
+    const remoteTimers = remoteTypingTimersRef.current;
 
     const channel = supabase.channel(
       `conversation-presence:${conversationId}`,
@@ -944,10 +946,7 @@ export default function ConversationMessages({
     const syncPresence = () => {
       if (disposed) return;
 
-      const state = channel.presenceState<{
-        user_id?: string;
-        online_at?: string;
-      }>();
+      const state = channel.presenceState();
 
       const onlineIds = Object.entries(state)
         .filter(
@@ -975,44 +974,39 @@ export default function ConversationMessages({
           return;
         }
 
-        const typingUserId = payload.user_id as string;
+        const userId = payload.user_id;
 
         if (
-          typingUserId === currentUserId ||
-          !participantIds.has(typingUserId)
+          userId === currentUserId ||
+          !participantIds.has(userId)
         ) {
           return;
         }
 
-        const existingTimer = remoteTypingTimers.get(typingUserId);
+        const existingTimer = remoteTimers.get(userId);
 
-        if (existingTimer) {
-          clearTimeout(existingTimer);
-        }
+        if (existingTimer) clearTimeout(existingTimer);
 
         if (payload.is_typing !== true) {
-          remoteTypingTimers.delete(typingUserId);
+          remoteTimers.delete(userId);
 
           setTypingUserIds((current) =>
-            current.filter((userId) => userId !== typingUserId)
+            current.filter((id) => id !== userId)
           );
 
           return;
         }
 
         setTypingUserIds((current) =>
-          current.includes(typingUserId)
-            ? current
-            : [...current, typingUserId]
+          current.includes(userId) ? current : [...current, userId]
         );
 
-        remoteTypingTimers.set(
-          typingUserId,
+        remoteTimers.set(
+          userId,
           setTimeout(() => {
-            remoteTypingTimers.delete(typingUserId);
-
+            remoteTimers.delete(userId);
             setTypingUserIds((current) =>
-              current.filter((userId) => userId !== typingUserId)
+              current.filter((id) => id !== userId)
             );
           }, 2400)
         );
@@ -1050,11 +1044,11 @@ export default function ConversationMessages({
         typingStopTimerRef.current = null;
       }
 
-      for (const timer of remoteTypingTimers.values()) {
+      for (const timer of remoteTimers.values()) {
         clearTimeout(timer);
       }
 
-      remoteTypingTimers.clear();
+      remoteTimers.clear();
       typingSignalActiveRef.current = false;
 
       if (presenceChannelRef.current === channel) {
@@ -1135,8 +1129,7 @@ export default function ConversationMessages({
         return;
       }
 
-      const hydratedOlderMessages =
-        await hydrateReplyPreviews(olderMessages);
+      const hydrated = await hydrateReplyPreviews(olderMessages);
 
       pendingOlderScroll.current = {
         scrollHeight: list.scrollHeight,
@@ -1145,9 +1138,7 @@ export default function ConversationMessages({
 
       shouldAutoScroll.current = false;
 
-      setMessages((current) =>
-        mergeMessages(hydratedOlderMessages, current)
-      );
+      setMessages((current) => mergeMessages(hydrated, current));
 
       if (olderMessages.length < 50) {
         setHasMoreMessages(false);
@@ -1156,7 +1147,7 @@ export default function ConversationMessages({
       setError(
         historyError instanceof Error
           ? `Unable to load earlier messages: ${historyError.message}`
-          : "Unable to load earlier messages. Please try again."
+          : "Unable to load earlier messages."
       );
     } finally {
       setLoadingOlderMessages(false);
@@ -1188,9 +1179,7 @@ export default function ConversationMessages({
     if (!messageId || savingEdit) return;
 
     if (!body || body.length > MAX_MESSAGE_LENGTH) {
-      setError(
-        "Edited messages must contain between 1 and 5,000 characters."
-      );
+      setError("Edited messages must contain between 1 and 5,000 characters.");
       return;
     }
 
@@ -1213,35 +1202,33 @@ export default function ConversationMessages({
         throw new Error(result.error || "Unable to edit this message.");
       }
 
-      const updatedMessage = result.message as Message;
+      const updated = result.message;
+      liveOverridesRef.current.set(updated.id, updated);
 
-      liveOverridesRef.current.set(updatedMessage.id, updatedMessage);
-
-      const updatedReplySource: ReplyPreview = {
-        id: updatedMessage.id,
-        sender_id: updatedMessage.sender_id,
-        body: updatedMessage.body,
-        deleted_at: updatedMessage.deleted_at ?? null,
+      const replySource: ReplyPreview = {
+        id: updated.id,
+        sender_id: updated.sender_id,
+        body: updated.body,
+        deleted_at: updated.deleted_at ?? null,
       };
 
       setMessages((current) =>
         mergeMessages(
           current.map((message) =>
-            message.reply_to_message_id === updatedMessage.id
-              ? { ...message, reply_to: updatedReplySource }
+            message.reply_to_message_id === updated.id
+              ? { ...message, reply_to: replySource }
               : message
           ),
-          [updatedMessage]
+          [updated]
         )
       );
 
-      setEditingMessageId(null);
-      setEditDraft("");
+      cancelEdit();
     } catch (editError) {
       setError(
         editError instanceof Error
           ? editError.message
-          : "Unable to edit this message. Please try again."
+          : "Unable to edit this message."
       );
     } finally {
       setSavingEdit(false);
@@ -1251,11 +1238,13 @@ export default function ConversationMessages({
   async function deleteMessage(messageId: string) {
     if (deletingMessageId) return;
 
-    const confirmed = window.confirm(
-      "Delete this message? It will be hidden from the conversation."
-    );
-
-    if (!confirmed) return;
+    if (
+      !window.confirm(
+        "Delete this message? It will be hidden from the conversation."
+      )
+    ) {
+      return;
+    }
 
     setDeletingMessageId(messageId);
     setError("");
@@ -1311,7 +1300,7 @@ export default function ConversationMessages({
       setError(
         deleteError instanceof Error
           ? deleteError.message
-          : "Unable to delete this message. Please try again."
+          : "Unable to delete this message."
       );
     } finally {
       setDeletingMessageId(null);
@@ -1345,9 +1334,7 @@ export default function ConversationMessages({
           .eq("user_id", currentUserId)
           .eq("emoji", emoji);
 
-        if (deleteError) {
-          throw new Error(deleteError.message);
-        }
+        if (deleteError) throw new Error(deleteError.message);
 
         reactionOverrides.current.set(getReactionRowKey(existing), null);
 
@@ -1367,13 +1354,8 @@ export default function ConversationMessages({
           .select("message_id, user_id, emoji, created_at")
           .single();
 
-        if (insertError) {
-          throw new Error(insertError.message);
-        }
-
-        if (!data) {
-          throw new Error("The reaction was not saved. Please try again.");
-        }
+        if (insertError) throw new Error(insertError.message);
+        if (!data) throw new Error("The reaction was not saved.");
 
         const reaction = data as MessageReaction;
         const key = getReactionRowKey(reaction);
@@ -1390,75 +1372,11 @@ export default function ConversationMessages({
       setError(
         reactionError instanceof Error
           ? `Unable to update reaction: ${reactionError.message}`
-          : "Unable to update this reaction. Please try again."
+          : "Unable to update this reaction."
       );
     } finally {
       setTogglingReactionKey(null);
     }
-  }
-
-  function sendTypingSignal(isTyping: boolean) {
-    const channel = presenceChannelRef.current;
-
-    if (!channel) return;
-
-    if (isTyping) {
-      const now = Date.now();
-
-      if (now - lastTypingBroadcastAtRef.current < 700) {
-        return;
-      }
-
-      lastTypingBroadcastAtRef.current = now;
-    }
-
-    void channel.send({
-      type: "broadcast",
-      event: "typing",
-      payload: {
-        user_id: currentUserId,
-        is_typing: isTyping,
-      },
-    });
-  }
-
-  function stopTyping() {
-    if (typingStopTimerRef.current) {
-      clearTimeout(typingStopTimerRef.current);
-      typingStopTimerRef.current = null;
-    }
-
-    if (typingSignalActiveRef.current) {
-      sendTypingSignal(false);
-    }
-
-    typingSignalActiveRef.current = false;
-  }
-
-  function handleDraftChange(value: string) {
-    setDraft(value);
-
-    if (typingStopTimerRef.current) {
-      clearTimeout(typingStopTimerRef.current);
-      typingStopTimerRef.current = null;
-    }
-
-    if (!value.trim()) {
-      stopTyping();
-      return;
-    }
-
-    typingSignalActiveRef.current = true;
-    sendTypingSignal(true);
-
-    typingStopTimerRef.current = setTimeout(() => {
-      if (typingSignalActiveRef.current) {
-        sendTypingSignal(false);
-      }
-
-      typingSignalActiveRef.current = false;
-      typingStopTimerRef.current = null;
-    }, 1600);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1502,15 +1420,10 @@ export default function ConversationMessages({
         throw new Error(result.error || "Unable to send your message.");
       }
 
+      const message = await hydrateReplyPreview(result.message);
+
       shouldAutoScroll.current = true;
-
-      const messageWithReply = await hydrateReplyPreview(
-        result.message as Message
-      );
-
-      setMessages((current) =>
-        mergeMessages(current, [messageWithReply])
-      );
+      setMessages((current) => mergeMessages(current, [message]));
 
       stopTyping();
       setDraft("");
@@ -1519,7 +1432,7 @@ export default function ConversationMessages({
       setError(
         sendError instanceof Error
           ? sendError.message
-          : "Unable to send your message. Please try again."
+          : "Unable to send your message."
       );
     } finally {
       setSending(false);
@@ -1532,17 +1445,11 @@ export default function ConversationMessages({
 
   const onlineParticipantNames = otherParticipants
     .filter((participant) => onlineUserIds.includes(participant.user_id))
-    .map(
-      (participant) =>
-        participant.full_name?.trim() || "RuffNeck member"
-    );
+    .map((participant) => participant.full_name?.trim() || "RuffNeck member");
 
   const typingParticipantNames = otherParticipants
     .filter((participant) => typingUserIds.includes(participant.user_id))
-    .map(
-      (participant) =>
-        participant.full_name?.trim() || "A participant"
-    );
+    .map((participant) => participant.full_name?.trim() || "A participant");
 
   return (
     <div className="message-panel">
@@ -1581,7 +1488,7 @@ export default function ConversationMessages({
             >
               ●
             </span>
-            {onlineParticipantNames.length > 0
+            {onlineParticipantNames.length
               ? `${onlineParticipantNames.join(", ")} active here`
               : otherParticipants.length === 1
                 ? "Other participant not active here"
@@ -1615,13 +1522,7 @@ export default function ConversationMessages({
           Search messages
         </label>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-          }}
-        >
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
             id="conversation-message-search"
             type="search"
@@ -1648,10 +1549,7 @@ export default function ConversationMessages({
               type="button"
               className="button-secondary"
               onClick={() => setMessageSearch("")}
-              style={{
-                padding: "7px 10px",
-                whiteSpace: "nowrap",
-              }}
+              style={{ padding: "7px 10px", whiteSpace: "nowrap" }}
             >
               Clear
             </button>
@@ -1662,10 +1560,7 @@ export default function ConversationMessages({
           id="conversation-message-search-status"
           className="muted"
           aria-live="polite"
-          style={{
-            fontSize: 12,
-            margin: "6px 0 0",
-          }}
+          style={{ fontSize: 12, margin: "6px 0 0" }}
         >
           {messageSearch.trim()
             ? `${filteredMessages.length} match${
@@ -1711,8 +1606,7 @@ export default function ConversationMessages({
           <div className="empty-state">
             <h2>Start the conversation</h2>
             <p className="muted">
-              Send a message or share a file to begin discussing your shared
-              interests or intention.
+              Send a message or share a file to begin your conversation.
             </p>
           </div>
         ) : filteredMessages.length === 0 ? (
@@ -1720,7 +1614,7 @@ export default function ConversationMessages({
             <h2>No matching messages</h2>
             <p className="muted">
               No loaded message contains “{messageSearch.trim()}”. Clear the
-              search or load earlier messages to expand the search.
+              search or load earlier messages.
             </p>
             <button
               type="button"
@@ -1743,7 +1637,9 @@ export default function ConversationMessages({
             const attachment = parseChatAttachment(message.body);
 
             const replyTarget = message.reply_to_message_id
-              ? messages.find((item) => item.id === message.reply_to_message_id) ??
+              ? messages.find(
+                  (item) => item.id === message.reply_to_message_id
+                ) ??
                 message.reply_to ??
                 null
               : null;
@@ -1800,7 +1696,9 @@ export default function ConversationMessages({
                         ? "Original message was deleted"
                         : replyTarget?.body
                           ? getMessagePreview(replyTarget.body).length > 180
-                            ? `${getMessagePreview(replyTarget.body).slice(0, 177)}…`
+                            ? `${getMessagePreview(
+                                replyTarget.body
+                              ).slice(0, 177)}…`
                             : getMessagePreview(replyTarget.body)
                           : "Original message is unavailable"}
                     </div>
@@ -1842,10 +1740,7 @@ export default function ConversationMessages({
                       rows={3}
                       required
                       disabled={savingEdit}
-                      style={{
-                        width: "100%",
-                        boxSizing: "border-box",
-                      }}
+                      style={{ width: "100%", boxSizing: "border-box" }}
                     />
 
                     <div
@@ -1876,11 +1771,7 @@ export default function ConversationMessages({
                   </form>
                 ) : attachment ? (
                   <div style={{ marginTop: 8, maxWidth: "100%" }}>
-                    <ConversationAttachment
-                      attachment={attachment}
-                      conversationId={conversationId}
-                      currentUserId={currentUserId}
-                    />
+                    <ConversationAttachment attachment={attachment} />
                   </div>
                 ) : (
                   <p
@@ -1933,7 +1824,9 @@ export default function ConversationMessages({
                           Boolean(togglingReactionKey) ||
                           Boolean(deletingMessageId)
                         }
-                        onClick={() => void toggleReaction(message.id, emoji)}
+                        onClick={() =>
+                          void toggleReaction(message.id, emoji)
+                        }
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
@@ -1989,10 +1882,7 @@ export default function ConversationMessages({
                         Boolean(deletingMessageId) ||
                         message.deleted_at != null
                       }
-                      style={{
-                        padding: "5px 10px",
-                        fontSize: 12,
-                      }}
+                      style={{ padding: "5px 10px", fontSize: 12 }}
                     >
                       Reply
                     </button>
@@ -2004,10 +1894,7 @@ export default function ConversationMessages({
                           className="button-secondary"
                           onClick={() => beginEdit(message)}
                           disabled={Boolean(deletingMessageId) || savingEdit}
-                          style={{
-                            padding: "5px 10px",
-                            fontSize: 12,
-                          }}
+                          style={{ padding: "5px 10px", fontSize: 12 }}
                         >
                           Edit
                         </button>
@@ -2017,10 +1904,7 @@ export default function ConversationMessages({
                           className="button-secondary"
                           onClick={() => void deleteMessage(message.id)}
                           disabled={Boolean(deletingMessageId) || savingEdit}
-                          style={{
-                            padding: "5px 10px",
-                            fontSize: 12,
-                          }}
+                          style={{ padding: "5px 10px", fontSize: 12 }}
                         >
                           {deletingMessageId === message.id
                             ? "Deleting…"
@@ -2035,10 +1919,7 @@ export default function ConversationMessages({
                         className="button-secondary"
                         onClick={() => void deleteMessage(message.id)}
                         disabled={Boolean(deletingMessageId) || savingEdit}
-                        style={{
-                          padding: "5px 10px",
-                          fontSize: 12,
-                        }}
+                        style={{ padding: "5px 10px", fontSize: 12 }}
                       >
                         {deletingMessageId === message.id
                           ? "Deleting…"
@@ -2056,11 +1937,7 @@ export default function ConversationMessages({
       </div>
 
       {error && (
-        <div
-          className="alert alert-error"
-          role="alert"
-          style={{ margin: 16 }}
-        >
+        <div className="alert alert-error" role="alert" style={{ margin: 16 }}>
           {error}
         </div>
       )}
@@ -2113,10 +1990,7 @@ export default function ConversationMessages({
               title="Cancel reply"
               onClick={() => setReplyingTo(null)}
               disabled={sending || uploadingFile}
-              style={{
-                padding: "2px 8px",
-                lineHeight: 1.5,
-              }}
+              style={{ padding: "2px 8px", lineHeight: 1.5 }}
             >
               ×
             </button>
@@ -2138,9 +2012,9 @@ export default function ConversationMessages({
             accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.txt,image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
             aria-label="Choose a file to attach"
             disabled={sending || uploadingFile}
-            onChange={(event) => {
-              handleFileSelection(event.target.files?.[0] ?? null);
-            }}
+            onChange={(event) =>
+              handleFileSelection(event.target.files?.[0] ?? null)
+            }
             style={{
               position: "absolute",
               width: 1,
@@ -2200,6 +2074,7 @@ export default function ConversationMessages({
               >
                 {selectedFile.name}
               </strong>
+
               <span className="muted" style={{ fontSize: 12 }}>
                 {formatFileSize(selectedFile.size)}
               </span>
@@ -2210,19 +2085,14 @@ export default function ConversationMessages({
               className="button-secondary"
               onClick={clearSelectedFile}
               disabled={sending || uploadingFile}
-              style={{
-                padding: "5px 10px",
-                fontSize: 12,
-              }}
+              style={{ padding: "5px 10px", fontSize: 12 }}
             >
               Remove file
             </button>
           </div>
         )}
 
-        <label htmlFor="message-body">
-          Your message
-        </label>
+        <label htmlFor="message-body">Your message</label>
 
         <textarea
           id="message-body"
