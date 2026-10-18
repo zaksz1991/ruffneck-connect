@@ -12,50 +12,76 @@ export type ChatAttachmentData = {
   size: number;
 };
 
+const ATTACHMENT_BUCKET = "rn-chat-attachments";
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+const ALLOWED_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+]);
+
 export function parseChatAttachment(
   body: string
 ): ChatAttachmentData | null {
-  if (!body.startsWith(ATTACHMENT_PREFIX)) {
+  if (
+    typeof body !== "string" ||
+    !body.startsWith(ATTACHMENT_PREFIX)
+  ) {
     return null;
   }
 
   try {
-    const value = JSON.parse(
+    const value: unknown = JSON.parse(
       body.slice(ATTACHMENT_PREFIX.length)
-    ) as Partial<ChatAttachmentData>;
+    );
 
     if (
-      typeof value.path !== "string" ||
-      typeof value.name !== "string" ||
-      typeof value.type !== "string" ||
-      typeof value.size !== "number"
+      typeof value !== "object" ||
+      value === null ||
+      !("path" in value) ||
+      !("name" in value) ||
+      !("type" in value) ||
+      !("size" in value)
     ) {
       return null;
     }
 
+    const attachment = value as ChatAttachmentData;
+    const segments = attachment.path.split("/");
+
     if (
-      !value.path.startsWith(
-        ""
-      ) ||
-      value.path.includes("..") ||
-      value.path.startsWith("/") ||
-      value.path.includes("\\")
+      typeof attachment.path !== "string" ||
+      typeof attachment.name !== "string" ||
+      typeof attachment.type !== "string" ||
+      typeof attachment.size !== "number" ||
+      attachment.path.length > 1024 ||
+      attachment.path.startsWith("/") ||
+      attachment.path.includes("\\") ||
+      attachment.path.includes("..") ||
+      segments.length !== 3 ||
+      segments.some((segment) => segment.trim() === "") ||
+      attachment.name.trim() === "" ||
+      attachment.name.length > 255 ||
+      !ALLOWED_TYPES.has(attachment.type) ||
+      !Number.isSafeInteger(attachment.size) ||
+      attachment.size < 1 ||
+      attachment.size > MAX_FILE_SIZE
     ) {
       return null;
     }
 
-    return {
-      path: value.path,
-      name: value.name,
-      type: value.type,
-      size: value.size,
-    };
+    return attachment;
   } catch {
     return null;
   }
 }
 
-function formatFileSize(bytes: number) {
+function formatFileSize(bytes: number): string {
   if (bytes < 1024) {
     return `${bytes} B`;
   }
@@ -78,29 +104,38 @@ export default function ConversationAttachment({
 
   useEffect(() => {
     let cancelled = false;
-    const supabase = createClient();
+
+    setUrl("");
+    setError("");
+    setLoading(true);
 
     async function loadAttachment() {
-      setLoading(true);
-      setError("");
+      try {
+        const supabase = createClient();
 
-      const { data, error: signedUrlError } =
-        await supabase.storage
-          .from("rn-chat-attachments")
-          .createSignedUrl(attachment.path, 300);
+        const { data, error: signedUrlError } =
+          await supabase.storage
+            .from(ATTACHMENT_BUCKET)
+            .createSignedUrl(attachment.path, 300);
 
-      if (cancelled) return;
+        if (cancelled) return;
 
-      if (signedUrlError || !data?.signedUrl) {
-        setError(
-          "This attachment is unavailable or you no longer have access."
-        );
+        if (signedUrlError || !data?.signedUrl) {
+          setError(
+            "This attachment is unavailable or you no longer have access."
+          );
+          setLoading(false);
+          return;
+        }
+
+        setUrl(data.signedUrl);
         setLoading(false);
-        return;
-      }
+      } catch {
+        if (cancelled) return;
 
-      setUrl(data.signedUrl);
-      setLoading(false);
+        setError("Unable to load this attachment. Please try again.");
+        setLoading(false);
+      }
     }
 
     void loadAttachment();
@@ -125,11 +160,13 @@ export default function ConversationAttachment({
         borderRadius: 12,
         background: "rgba(255,255,255,0.7)",
         maxWidth: "100%",
+        minWidth: 0,
       }}
     >
       {loading ? (
         <p
           className="muted"
+          role="status"
           style={{ margin: 0, fontSize: 13 }}
         >
           Loading attachment…
