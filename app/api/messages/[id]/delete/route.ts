@@ -61,7 +61,7 @@ export async function DELETE(
     return jsonError("Invalid delete request.", 400);
   }
 
-  const messageId = payload.messageId;
+  const { messageId } = payload;
 
   if (typeof messageId !== "string" || !UUID_REGEX.test(messageId)) {
     return jsonError("Invalid message ID.", 400);
@@ -81,7 +81,10 @@ export async function DELETE(
       participantError.message
     );
 
-    return jsonError("Unable to verify conversation membership.", 500);
+    return jsonError(
+      "Unable to verify conversation membership.",
+      500
+    );
   }
 
   if (!participant) {
