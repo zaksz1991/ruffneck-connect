@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -73,6 +74,49 @@ function formatProfileOption(profile: MemberProfile) {
   return email ? `${name} — ${email}` : name;
 }
 
+function getInitials(name: string): string {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "RN"
+  );
+}
+
+function getAvatarDisplayUrl(value: string | null): string {
+  if (!value) return "";
+
+  try {
+    const url = new URL(value);
+
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return "";
+    }
+
+    if (
+      url.hostname === "drive.google.com" ||
+      url.hostname === "www.drive.google.com"
+    ) {
+      const fileId =
+        url.pathname.match(/\/file\/d\/([^/]+)/)?.[1] ??
+        url.searchParams.get("id");
+
+      if (!fileId) return "";
+
+      return `https://drive.google.com/thumbnail?id=${encodeURIComponent(
+        fileId
+      )}&sz=w400`;
+    }
+
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
 const MEMBER_SUCCESS_MESSAGES: Record<string, string> = {
   added: "The member was added to the community.",
   removed: "The member was removed from the community.",
@@ -92,7 +136,7 @@ const MEMBER_ERROR_MESSAGES: Record<string, string> = {
   role_change_failed:
     "The role could not be changed. Only the community owner can change member roles.",
   join_failed:
-    "We couldn’t submit your membership request. Please refresh and try again.",
+    "We couldn't submit your membership request. Please refresh and try again.",
 };
 
 export default async function CommunityDetailsPage({
@@ -175,13 +219,13 @@ export default async function CommunityDetailsPage({
     intents = (data ?? []) as Intent[];
   }
 
-  const { data: profile } = await supabase
+  const { data: ownerProfile } = await supabase
     .from("profiles")
     .select("full_name")
     .eq("id", community.owner_id)
     .maybeSingle();
 
-  const ownerName = profile?.full_name || "Community owner";
+  const ownerName = ownerProfile?.full_name || "Community owner";
 
   let members: CommunityMember[] = [];
   let memberProfiles: MemberProfile[] = [];
@@ -612,8 +656,12 @@ export default async function CommunityDetailsPage({
                     member.user_id === community.owner_id;
 
                   const displayName =
-                    memberProfile?.full_name ||
+                    memberProfile?.full_name?.trim() ||
                     (isTargetOwner ? ownerName : "RuffNeck member");
+
+                  const avatarUrl = getAvatarDisplayUrl(
+                    memberProfile?.avatar_url ?? null
+                  );
 
                   return (
                     <article
@@ -621,21 +669,34 @@ export default async function CommunityDetailsPage({
                       key={member.user_id}
                     >
                       <div className="member-card-profile">
-                        {memberProfile?.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
+                        {avatarUrl ? (
+                          <Image
                             className="member-avatar"
-                            src={memberProfile.avatar_url}
-                            alt=""
+                            src={avatarUrl}
+                            alt={`${displayName}'s profile photo`}
+                            width={64}
+                            height={64}
+                            unoptimized
+                            style={{
+                              width: 64,
+                              height: 64,
+                              flexShrink: 0,
+                              borderRadius: "50%",
+                              objectFit: "cover",
+                            }}
                           />
                         ) : (
-                          <div className="member-avatar member-avatar-fallback">
-                            {displayName.charAt(0).toUpperCase()}
+                          <div
+                            className="member-avatar member-avatar-fallback"
+                            aria-label={`${displayName}'s initials`}
+                          >
+                            {getInitials(displayName)}
                           </div>
                         )}
 
                         <div className="member-details">
                           <h3>{displayName}</h3>
+
                           <p className="muted">
                             Joined {formatDate(member.joined_at)}
                           </p>
@@ -643,6 +704,17 @@ export default async function CommunityDetailsPage({
                           <span className={`member-role role-${member.role}`}>
                             {member.role}
                           </span>
+
+                          {memberProfile?.show_in_directory !== false && (
+                            <p style={{ marginTop: 10 }}>
+                              <Link
+                                href={`/members/${member.user_id}`}
+                                className="text-link"
+                              >
+                                View member profile →
+                              </Link>
+                            </p>
+                          )}
                         </div>
                       </div>
 
