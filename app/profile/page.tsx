@@ -7,6 +7,16 @@ import ProfilePreview from "@/components/ProfilePreview";
 
 export const dynamic = "force-dynamic";
 
+const AVATAR_BUCKET = "profile-avatars";
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
+
+const ALLOWED_AVATAR_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
 type Profile = {
   full_name: string | null;
   bio: string | null;
@@ -85,9 +95,12 @@ const errorMessages: Record<string, string> = {
   phone: "Your phone number must not exceed 30 characters.",
   locale: "Your preferred language must not exceed 80 characters.",
   avatar: "Enter a valid photo URL beginning with HTTP or HTTPS.",
-  privacy: "Choose a valid member directory privacy setting.",
+  photo_type: "Choose a JPG, PNG, WebP, or GIF image.",
+  photo_size: "Your profile photo must not exceed 5 MB.",
+  photo_upload: "Your photo could not be uploaded. Check the storage permissions and try again.",
   missing: "Your profile record could not be found. Please contact support.",
   save: "Your profile could not be saved. Please try again.",
+  privacy: "Choose a valid member directory privacy setting.",
 };
 
 export default async function ProfilePage({ searchParams }: PageProps) {
@@ -176,6 +189,7 @@ export default async function ProfilePage({ searchParams }: PageProps) {
     const phone = getValue(formData, "phone");
     const locale = getValue(formData, "locale");
     const directoryValue = formData.get("show_in_directory");
+    const photoValue = formData.get("avatar_file");
 
     if (full_name.length < 2 || full_name.length > 100) {
       redirect("/profile?error=name");
@@ -204,9 +218,22 @@ export default async function ProfilePage({ searchParams }: PageProps) {
       redirect("/profile?error=privacy");
     }
 
+    let avatarFile: File | null = null;
+
+    if (photoValue instanceof File && photoValue.size > 0) {
+      avatarFile = photoValue;
+
+      if (!Object.hasOwn(ALLOWED_AVATAR_TYPES, avatarFile.type)) {
+        redirect("/profile?error=photo_type");
+      }
+
+      if (avatarFile.size > MAX_AVATAR_SIZE) {
+        redirect("/profile?error=photo_size");
+      }
+    }
+
     const show_in_directory = directoryValue === "true";
 
-    // Update the existing profile without changing its role or member number.
     const { data: existingProfile, error: lookupError } = await supabase
       .from("profiles")
       .select("id")
@@ -234,13 +261,50 @@ export default async function ProfilePage({ searchParams }: PageProps) {
       redirect("/profile?error=missing");
     }
 
+    let finalAvatarUrl: string | null = avatar_url || null;
+    let uploadedAvatarPath: string | null = null;
+
+    if (avatarFile) {
+      const extension = ALLOWED_AVATAR_TYPES[avatarFile.type];
+      const uniqueFilename = `${crypto.randomUUID()}.${extension}`;
+
+      // Keep each member's uploaded photos inside their own storage folder.
+      uploadedAvatarPath = `${user.id}/${uniqueFilename}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(AVATAR_BUCKET)
+        .upload(uploadedAvatarPath, avatarFile, {
+          contentType: avatarFile.type,
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("Profile photo upload failed:", {
+          message: uploadError.message,
+          name: uploadError.name,
+          userId: user.id,
+          path: uploadedAvatarPath,
+        });
+
+        redirect("/profile?error=photo_upload");
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from(AVATAR_BUCKET)
+        .getPublicUrl(uploadedAvatarPath);
+
+      finalAvatarUrl = publicUrlData.publicUrl;
+    }
+
+    // Update the existing row without changing role or member number.
     const { data: updatedProfile, error: updateError } = await supabase
       .from("profiles")
       .update({
         email: user.email ?? null,
         full_name,
         bio: bio || null,
-        avatar_url: avatar_url || null,
+        avatar_url: finalAvatarUrl,
         phone: phone || null,
         locale: locale || "en",
         show_in_directory,
@@ -260,6 +324,20 @@ export default async function ProfilePage({ searchParams }: PageProps) {
         hint: updateError?.hint ?? null,
         userId: user.id,
       });
+
+      // Remove the newly uploaded file if the profile update failed.
+      if (uploadedAvatarPath) {
+        const { error: cleanupError } = await supabase.storage
+          .from(AVATAR_BUCKET)
+          .remove([uploadedAvatarPath]);
+
+        if (cleanupError) {
+          console.error("Could not remove unused profile photo:", {
+            message: cleanupError.message,
+            path: uploadedAvatarPath,
+          });
+        }
+      }
 
       redirect("/profile?error=save");
     }
@@ -457,18 +535,32 @@ export default async function ProfilePage({ searchParams }: PageProps) {
             </div>
 
             <div className="form-field">
-              <label htmlFor="avatar_url">Profile photo URL</label>
+              <label htmlFor="avatar_file">Upload profile photo</label>
+              <input
+                id="avatar_file"
+                name="avatar_file"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+              />
+              <span className="form-help">
+                Choose a JPG, PNG, WebP, or GIF image up to 5 MB.
+                If you upload a photo, it takes priority over the photo URL.
+              </span>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="avatar_url">Or use a profile photo URL</label>
               <input
                 id="avatar_url"
                 name="avatar_url"
                 type="url"
                 defaultValue={profile?.avatar_url ?? ""}
                 maxLength={1000}
-                placeholder="https://drive.google.com/file/d/..."
+                placeholder="https://example.com/photo.jpg"
               />
               <span className="form-help">
-                For Google Drive photos, set sharing to Anyone with the
-                link — Viewer. Drive image URLs may not always work.
+                Google Drive links may not always display correctly.
+                Leave this field unchanged when uploading a new photo.
               </span>
             </div>
 
