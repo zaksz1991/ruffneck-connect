@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConversationListFilters from "@/components/ConversationListFilters";
-import MemberConnectionButton from "@/components/MemberConnectionButton";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +24,7 @@ type Conversation = {
 type Profile = {
   id: string;
   full_name: string | null;
+  avatar_url?: string | null;
 };
 
 type ConversationParticipantProfile = {
@@ -87,10 +87,10 @@ export default async function MessagesPage({
   const requestedRecipientId = params.to?.trim() ?? "";
 
   const startError =
-    params.start_error === "not_connected"
-      ? "An accepted connection is required before you can start a private conversation. Send a connection request or accept the other member's request first."
-      : params.start_error === "unavailable"
-        ? "The private conversation could not be opened. Check the connection status and try again."
+    params.start_error === "unavailable"
+      ? "The private conversation could not be opened. Please try again."
+      : params.start_error === "invalid_recipient"
+        ? "This member cannot be contacted."
         : "";
 
   const supabase = await createClient();
@@ -119,11 +119,12 @@ export default async function MessagesPage({
 
   let recipientName = "";
   let recipientError = "";
+  let recipientAvatar: string | null = null;
 
   if (requestedRecipientId && isValidUuid(requestedRecipientId)) {
     const { data: recipient, error } = await supabase
       .from("profiles")
-      .select("id, full_name")
+      .select("id, full_name, avatar_url")
       .eq("id", requestedRecipientId)
       .maybeSingle();
 
@@ -139,9 +140,11 @@ export default async function MessagesPage({
       recipientError =
         "This member is unavailable or cannot be contacted.";
     } else {
+      const profile = recipient as Profile;
+
       recipientName =
-        (recipient as Profile).full_name?.trim() ||
-        "RuffNeck member";
+        profile.full_name?.trim() || "RuffNeck member";
+      recipientAvatar = profile.avatar_url ?? null;
     }
   } else if (requestedRecipientId) {
     recipientError = "The selected member link is invalid.";
@@ -504,7 +507,10 @@ export default async function MessagesPage({
           </div>
         </div>
 
-        <div className="rn-messages-hero-decoration" aria-hidden="true">
+        <div
+          className="rn-messages-hero-decoration"
+          aria-hidden="true"
+        >
           <div className="rn-message-orbit rn-message-orbit-one" />
           <div className="rn-message-orbit rn-message-orbit-two" />
           <div className="rn-message-hero-symbol">✉</div>
@@ -517,7 +523,10 @@ export default async function MessagesPage({
         </div>
       </section>
 
-      <section className="rn-message-stats" aria-label="Messaging overview">
+      <section
+        className="rn-message-stats"
+        aria-label="Messaging overview"
+      >
         <article className="rn-message-stat">
           <span className="rn-message-stat-icon">▤</span>
           <div>
@@ -562,7 +571,7 @@ export default async function MessagesPage({
             <h2>Messages</h2>
             <p>
               Pick up where you left off or start a new
-              connection.
+              conversation with any member.
             </p>
           </div>
 
@@ -575,12 +584,18 @@ export default async function MessagesPage({
         </div>
 
         {requestedRecipientId && recipientError && (
-          <div className="rn-message-notice rn-message-notice-error" role="alert">
+          <div
+            className="rn-message-notice rn-message-notice-error"
+            role="alert"
+          >
             <span className="rn-message-notice-icon">!</span>
             <div>
               <h3>Member unavailable</h3>
               <p>{recipientError}</p>
-              <Link href="/members" className="rn-message-inline-link">
+              <Link
+                href="/members"
+                className="rn-message-inline-link"
+              >
                 Return to members →
               </Link>
             </div>
@@ -591,8 +606,17 @@ export default async function MessagesPage({
           !recipientError &&
           recipientName && (
             <div className="rn-message-recipient-card">
-              <div className="rn-message-recipient-avatar" aria-hidden="true">
-                {recipientName.charAt(0).toUpperCase()}
+              <div className="rn-message-recipient-avatar">
+                {recipientAvatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={recipientAvatar}
+                    alt=""
+                    className="rn-message-recipient-avatar-image"
+                  />
+                ) : (
+                  recipientName.charAt(0).toUpperCase()
+                )}
               </div>
 
               <div className="rn-message-recipient-details">
@@ -600,18 +624,11 @@ export default async function MessagesPage({
                   SELECTED MEMBER
                 </span>
                 <h3>{recipientName}</h3>
-
-                {existingDirectConversation ? (
-                  <p>
-                    Your direct conversation with this member
-                    already exists.
-                  </p>
-                ) : (
-                  <p>
-                    Connect with this member to start a private
-                    conversation.
-                  </p>
-                )}
+                <p>
+                  {existingDirectConversation
+                    ? "Your direct conversation with this member already exists."
+                    : "Start a private conversation with this member. An accepted connection is not required."}
+                </p>
               </div>
 
               <div className="rn-message-recipient-actions">
@@ -623,9 +640,19 @@ export default async function MessagesPage({
                     Open conversation →
                   </Link>
                 ) : (
-                  <MemberConnectionButton
-                    otherUserId={requestedRecipientId}
-                  />
+                  <form action="/messages/start" method="post">
+                    <input
+                      type="hidden"
+                      name="recipient_id"
+                      value={requestedRecipientId}
+                    />
+                    <button
+                      type="submit"
+                      className="rn-messages-primary-button"
+                    >
+                      Start private chat →
+                    </button>
+                  </form>
                 )}
 
                 <Link
@@ -636,7 +663,7 @@ export default async function MessagesPage({
                 </Link>
               </div>
 
-              {!existingDirectConversation && startError && (
+              {startError && (
                 <p
                   className="rn-message-start-error"
                   role="alert"
@@ -649,23 +676,26 @@ export default async function MessagesPage({
 
         {conversations.length === 0 ? (
           <div className="rn-message-empty-state">
-            <div className="rn-message-empty-illustration" aria-hidden="true">
+            <div
+              className="rn-message-empty-illustration"
+              aria-hidden="true"
+            >
               <span>✉</span>
               <i />
               <b />
             </div>
 
             <span className="rn-message-empty-eyebrow">
-              YOUR NEXT CONNECTION STARTS HERE
+              YOUR NEXT CONVERSATION STARTS HERE
             </span>
 
             <h2>No conversations yet</h2>
 
             <p>
-              Connect with another member and start a private
-              chat after they accept your request. You can
-              also respond to an open intention and start a
-              conversation around a shared purpose.
+              Find any member and start a private chat
+              directly. You do not need to connect first.
+              You can also respond to an open intention and
+              start a conversation around a shared purpose.
             </p>
 
             <div className="rn-message-empty-actions">
@@ -694,7 +724,9 @@ export default async function MessagesPage({
         ) : (
           <div className="rn-message-list-container">
             <div className="rn-message-list-intro">
-              <span className="rn-message-list-intro-icon">↔</span>
+              <span className="rn-message-list-intro-icon">
+                ↔
+              </span>
               <div>
                 <strong>Your conversations</strong>
                 <p>
@@ -710,7 +742,7 @@ export default async function MessagesPage({
         )}
       </section>
 
-      <style jsx global>{`
+      <style>{`
         .rn-messages-page {
           --rn-msg-navy: #10233f;
           --rn-msg-blue: #087fba;
@@ -739,11 +771,7 @@ export default async function MessagesPage({
           border: 1px solid rgba(255, 255, 255, 0.12);
           border-radius: 28px;
           background:
-            radial-gradient(
-              circle at 82% 20%,
-              rgba(0, 180, 216, 0.24),
-              transparent 30%
-            ),
+            radial-gradient(circle at 82% 20%, rgba(0, 180, 216, 0.24), transparent 30%),
             linear-gradient(125deg, #0b1e3a 0%, #123b61 62%, #075879 100%);
           box-shadow: 0 24px 60px rgba(11, 30, 58, 0.18);
           color: #fff;
@@ -817,16 +845,14 @@ export default async function MessagesPage({
           padding: 0.75rem 1.1rem;
           border: 1px solid transparent;
           border-radius: 12px;
+          font: inherit;
           font-size: 0.88rem;
           font-weight: 750;
           line-height: 1.35;
           text-align: center;
           text-decoration: none;
-          transition:
-            transform 160ms ease,
-            box-shadow 160ms ease,
-            background 160ms ease,
-            border-color 160ms ease;
+          cursor: pointer;
+          transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease;
         }
 
         .rn-messages-primary-button {
@@ -900,11 +926,7 @@ export default async function MessagesPage({
           place-items: center;
           border: 1px solid rgba(255, 255, 255, 0.35);
           border-radius: 30px;
-          background: linear-gradient(
-            145deg,
-            rgba(255, 255, 255, 0.2),
-            rgba(255, 255, 255, 0.06)
-          );
+          background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
           color: #fff;
           font-size: 3rem;
           box-shadow: 0 18px 55px rgba(0, 0, 0, 0.15);
@@ -1054,19 +1076,14 @@ export default async function MessagesPage({
           padding: 1.25rem;
           border: 1px solid #ccecf5;
           border-radius: 18px;
-          background:
-            radial-gradient(
-              circle at 100% 0%,
-              rgba(0, 180, 216, 0.1),
-              transparent 40%
-            ),
-            #f5fcff;
+          background: radial-gradient(circle at 100% 0%, rgba(0, 180, 216, 0.1), transparent 40%), #f5fcff;
         }
 
         .rn-message-recipient-avatar {
           display: grid;
           width: 58px;
           height: 58px;
+          overflow: hidden;
           place-items: center;
           border: 3px solid #fff;
           border-radius: 18px;
@@ -1075,6 +1092,12 @@ export default async function MessagesPage({
           font-size: 1.45rem;
           font-weight: 850;
           box-shadow: 0 5px 16px rgba(8, 127, 186, 0.17);
+        }
+
+        .rn-message-recipient-avatar-image {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
         }
 
         .rn-message-recipient-details {
@@ -1105,6 +1128,10 @@ export default async function MessagesPage({
         .rn-message-recipient-actions {
           grid-column: 2;
           margin-top: 0.15rem;
+        }
+
+        .rn-message-recipient-actions form {
+          margin: 0;
         }
 
         .rn-message-recipient-actions .button,
@@ -1224,13 +1251,7 @@ export default async function MessagesPage({
           padding: clamp(2rem, 6vw, 4rem) 1.25rem;
           border: 1px dashed #c8dce9;
           border-radius: 20px;
-          background:
-            radial-gradient(
-              circle at 50% 0%,
-              rgba(0, 180, 216, 0.09),
-              transparent 42%
-            ),
-            linear-gradient(180deg, #f8fcff, #fff);
+          background: radial-gradient(circle at 50% 0%, rgba(0, 180, 216, 0.09), transparent 42%), linear-gradient(180deg, #f8fcff, #fff);
           text-align: center;
         }
 
@@ -1441,14 +1462,8 @@ export default async function MessagesPage({
             flex-direction: column;
           }
 
-          .rn-message-recipient-actions > * {
-            width: 100%;
-          }
-
-          .rn-message-recipient-actions form {
-            width: 100%;
-          }
-
+          .rn-message-recipient-actions > *,
+          .rn-message-recipient-actions form,
           .rn-message-recipient-actions form button {
             width: 100%;
           }
