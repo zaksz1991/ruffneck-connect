@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import CommunityMembershipRequests from "./CommunityMembershipRequests";
 import CommunityActivityLog from "./CommunityActivityLog";
 import CommunityShareButton from "./CommunityShareButton";
+import CommunityInvitationCard from "./CommunityInvitationCard";
+import CommunityEvents from "./CommunityEvents";
 
 export const dynamic = "force-dynamic";
 
@@ -510,6 +512,24 @@ export default async function CommunityDetailsPage({
           <CommunityMembershipRequests communityId={community.id} />
           <CommunityActivityLog communityId={community.id} />
         </>
+      )}
+
+      {community.visibility === "public" && (isMember || isOwner) && (
+        <CommunityInvitationCard
+          slug={community.slug}
+          name={community.name}
+          description={community.description}
+          category={community.category}
+          locationLabel={community.location_label}
+        />
+      )}
+
+      {(isMember || isOwner) && (
+        <CommunityEvents
+          communityId={community.id}
+          canManage={canManageMembers}
+          canRsvp={isMember || isOwner}
+        />
       )}
 
       {(isMember || isOwner) && (
