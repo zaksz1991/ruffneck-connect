@@ -12,20 +12,6 @@ const UUID_REGEX =
 
 const ATTACHMENT_PREFIX = "__RN_CHAT_ATTACHMENT_V1__:";
 const MAX_MESSAGE_LENGTH = 5000;
-const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
-const MAX_ATTACHMENT_NAME_LENGTH = 120;
-
-const ALLOWED_ATTACHMENTS: Record<string, string[]> = {
-  "image/jpeg": [".jpg", ".jpeg"],
-  "image/png": [".png"],
-  "image/webp": [".webp"],
-  "application/pdf": [".pdf"],
-  "application/msword": [".doc"],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
-    ".docx",
-  ],
-  "text/plain": [".txt"],
-};
 
 function jsonError(message: string, status: number) {
   return NextResponse.json(
@@ -50,9 +36,12 @@ function validateMessageBody(body: string): string | null {
     return "Edited messages must contain between 1 and 5,000 characters.";
   }
 
-  // Attachments are immutable through the text-edit endpoint.
   if (body.startsWith(ATTACHMENT_PREFIX)) {
     return "Attachments cannot be edited as text.";
+  }
+
+  if (/[\u0000]/.test(body)) {
+    return "Messages cannot contain null characters.";
   }
 
   return null;
@@ -91,8 +80,7 @@ export async function PATCH(
     return jsonError("Invalid edit request.", 400);
   }
 
-  const messageId = payload.messageId;
-  const rawBody = payload.body;
+  const { messageId, body: rawBody } = payload;
 
   if (typeof messageId !== "string" || !UUID_REGEX.test(messageId)) {
     return jsonError("Invalid message ID.", 400);
@@ -123,7 +111,10 @@ export async function PATCH(
       participantError.message
     );
 
-    return jsonError("Unable to verify conversation membership.", 500);
+    return jsonError(
+      "Unable to verify conversation membership.",
+      500
+    );
   }
 
   if (!participant) {
@@ -133,9 +124,14 @@ export async function PATCH(
     );
   }
 
+  // Update only a message authored by the current user that has not
+  // been deleted and belongs to the requested conversation.
   const { data: message, error: updateError } = await supabase
     .from("messages")
-    .update({ body })
+    .update({
+      body,
+      edited_at: new Date().toISOString(),
+    })
     .eq("id", messageId)
     .eq("conversation_id", conversationId)
     .eq("sender_id", user.id)
