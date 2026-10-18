@@ -4,6 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MessageForwardButton from "@/components/MessageForwardButton";
+import ConversationAttachment, {
+  ATTACHMENT_PREFIX,
+  parseChatAttachment,
+} from "@/components/ConversationAttachment";
 
 type ConversationParticipantProfile = {
   user_id: string;
@@ -40,6 +44,23 @@ type MessageReaction = {
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀"] as const;
 type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
+
+const ATTACHMENT_BUCKET = "rn-chat-attachments";
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const MAX_MESSAGE_LENGTH = 5000;
+const MAX_ATTACHMENT_NAME_LENGTH = 120;
+
+const ALLOWED_ATTACHMENT_TYPES: Record<string, string[]> = {
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/webp": [".webp"],
+  "application/pdf": [".pdf"],
+  "application/msword": [".doc"],
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+    ".docx",
+  ],
+  "text/plain": [".txt"],
+};
 
 type SendResponse = {
   message?: Message;
@@ -111,6 +132,15 @@ function formatDate(value: string) {
   }).format(date);
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function getReactionRowKey(
   reaction: Pick<MessageReaction, "message_id" | "user_id" | "emoji">
 ) {
@@ -119,6 +149,54 @@ function getReactionRowKey(
     reaction.user_id,
     reaction.emoji,
   ]);
+}
+
+function sanitizeFileName(name: string) {
+  const cleaned = name
+    .normalize("NFKC")
+    .replace(/[\/\\]/g, "_")
+    .replace(/[^\p{L}\p{N}._ -]/gu, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\.+/, "")
+    .slice(0, MAX_ATTACHMENT_NAME_LENGTH);
+
+  return cleaned || "attachment";
+}
+
+function validateAttachment(file: File): string | null {
+  if (file.size <= 0) {
+    return "The selected file is empty.";
+  }
+
+  if (file.size > MAX_ATTACHMENT_SIZE) {
+    return "Files must be 10 MB or smaller.";
+  }
+
+  const type = file.type.toLowerCase();
+  const allowedExtensions = ALLOWED_ATTACHMENT_TYPES[type];
+
+  if (!allowedExtensions) {
+    return "This file type is not supported. Upload JPG, PNG, WebP, PDF, DOC, DOCX, or TXT files.";
+  }
+
+  const extension = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
+
+  if (!allowedExtensions.includes(extension)) {
+    return "The file extension does not match its reported file type.";
+  }
+
+  return null;
+}
+
+function getMessagePreview(body: string) {
+  const attachment = parseChatAttachment(body);
+
+  if (attachment) {
+    return `Attachment: ${attachment.name}`;
+  }
+
+  return body;
 }
 
 export default function ConversationMessages({
@@ -140,9 +218,11 @@ export default function ConversationMessages({
 
     if (!query) return messages;
 
-    return messages.filter((message) =>
-      message.body.toLocaleLowerCase().includes(query)
-    );
+    return messages.filter((message) => {
+      const searchableBody = getMessagePreview(message.body);
+
+      return searchableBody.toLocaleLowerCase().includes(query);
+    });
   }, [messages, messageSearch]);
 
   const [draft, setDraft] = useState("");
@@ -152,6 +232,11 @@ export default function ConversationMessages({
   replyingToRef.current = replyingTo;
 
   const [sending, setSending] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [editingMessageId, setEditingMessageId] = useState<string | null>(
     null
   );
@@ -229,9 +314,7 @@ export default function ConversationMessages({
 
   const participantIdsKey = useMemo(
     () =>
-      [
-        ...new Set(participants.map((participant) => participant.user_id)),
-      ]
+      [...new Set(participants.map((participant) => participant.user_id))]
         .sort()
         .join(","),
     [participants]
@@ -291,8 +374,7 @@ export default function ConversationMessages({
       ...new Set(
         incomingMessages
           .filter(
-            (message) =>
-              message.reply_to_message_id && !message.reply_to
+            (message) => message.reply_to_message_id && !message.reply_to
           )
           .map((message) => message.reply_to_message_id as string)
       ),
@@ -331,8 +413,7 @@ export default function ConversationMessages({
 
       return {
         ...message,
-        reply_to:
-          replyMap.get(message.reply_to_message_id) ?? null,
+        reply_to: replyMap.get(message.reply_to_message_id) ?? null,
       };
     });
   }
@@ -346,6 +427,145 @@ export default function ConversationMessages({
     window.setTimeout(() => {
       document.getElementById("message-body")?.focus();
     }, 0);
+  }
+
+  function handleFileSelection(file: File | null) {
+    setError("");
+
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+
+    const validationError = validateAttachment(file);
+
+    if (validationError) {
+      setSelectedFile(null);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      setError(validationError);
+      return;
+    }
+
+    setSelectedFile(file);
+  }
+
+  function clearSelectedFile() {
+    setSelectedFile(null);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  async function sendAttachment(file: File) {
+    if (sending || uploadingFile) return;
+
+    const validationError = validateAttachment(file);
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setUploadingFile(true);
+    setError("");
+
+    let uploadedPath: string | null = null;
+
+    try {
+      const safeName = sanitizeFileName(file.name);
+      const uniqueName = `${crypto.randomUUID()}-${safeName}`;
+      const path = `${conversationId}/${currentUserId}/${uniqueName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(ATTACHMENT_BUCKET)
+        .upload(path, file, {
+          cacheControl: "3600",
+          contentType: file.type,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new Error(
+          `File upload failed: ${uploadError.message}`
+        );
+      }
+
+      uploadedPath = path;
+
+      const attachmentBody =
+        ATTACHMENT_PREFIX +
+        JSON.stringify({
+          path,
+          name: safeName,
+          type: file.type,
+          size: file.size,
+        });
+
+      if (attachmentBody.length > MAX_MESSAGE_LENGTH) {
+        throw new Error("The attachment information is too large.");
+      }
+
+      const response = await fetch(
+        `/api/messages/${conversationId}/send`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body: attachmentBody,
+            replyToMessageId: replyingTo?.id ?? null,
+          }),
+        }
+      );
+
+      const result = (await response.json()) as SendResponse;
+
+      if (!response.ok || !result.message) {
+        throw new Error(
+          result.error || "The file uploaded but its message could not be sent."
+        );
+      }
+
+      const messageWithReply = await hydrateReplyPreview(
+        result.message as Message
+      );
+
+      shouldAutoScroll.current = true;
+
+      setMessages((current) =>
+        mergeMessages(current, [messageWithReply])
+      );
+
+      stopTyping();
+      setReplyingTo(null);
+      clearSelectedFile();
+      setError("");
+    } catch (sendError) {
+      if (uploadedPath) {
+        const { error: cleanupError } = await supabase.storage
+          .from(ATTACHMENT_BUCKET)
+          .remove([uploadedPath]);
+
+        if (cleanupError) {
+          console.error(
+            "Unable to clean up an unsent attachment:",
+            cleanupError.message
+          );
+        }
+      }
+
+      setError(
+        sendError instanceof Error
+          ? sendError.message
+          : "Unable to send the attachment. Please try again."
+      );
+    } finally {
+      setUploadingFile(false);
+    }
   }
 
   useEffect(() => {
@@ -415,8 +635,6 @@ export default function ConversationMessages({
     liveOverrides.clear();
 
     async function refreshMessages() {
-      // Deliberately avoid a PostgREST self-join. Reply previews are fetched
-      // separately to avoid depending on relationship-cache resolution.
       const { data, error: loadError } = await supabase
         .from("messages")
         .select(
@@ -660,9 +878,7 @@ export default function ConversationMessages({
             return;
           }
 
-          if (
-            !visibleMessageIdsRef.current.has(removed.message_id)
-          ) {
+          if (!visibleMessageIdsRef.current.has(removed.message_id)) {
             return;
           }
 
@@ -670,9 +886,7 @@ export default function ConversationMessages({
           reactionOverrides.current.set(key, null);
 
           setReactionRows((current) =>
-            current.filter(
-              (row) => getReactionRowKey(row) !== key
-            )
+            current.filter((row) => getReactionRowKey(row) !== key)
           );
         }
       )
@@ -896,7 +1110,6 @@ export default function ConversationMessages({
     setError("");
 
     try {
-      // No self-join here either. Reply previews are hydrated separately.
       const { data, error: historyError } = await supabase
         .from("messages")
         .select(
@@ -951,6 +1164,11 @@ export default function ConversationMessages({
   }
 
   function beginEdit(message: Message) {
+    if (parseChatAttachment(message.body)) {
+      setError("File attachment messages cannot be edited.");
+      return;
+    }
+
     setError("");
     setEditingMessageId(message.id);
     setEditDraft(message.body);
@@ -969,7 +1187,7 @@ export default function ConversationMessages({
 
     if (!messageId || savingEdit) return;
 
-    if (!body || body.length > 5000) {
+    if (!body || body.length > MAX_MESSAGE_LENGTH) {
       setError(
         "Edited messages must contain between 1 and 5,000 characters."
       );
@@ -992,17 +1210,12 @@ export default function ConversationMessages({
       const result = (await response.json()) as EditResponse;
 
       if (!response.ok || !result.message) {
-        throw new Error(
-          result.error || "Unable to edit this message."
-        );
+        throw new Error(result.error || "Unable to edit this message.");
       }
 
       const updatedMessage = result.message as Message;
 
-      liveOverridesRef.current.set(
-        updatedMessage.id,
-        updatedMessage
-      );
+      liveOverridesRef.current.set(updatedMessage.id, updatedMessage);
 
       const updatedReplySource: ReplyPreview = {
         id: updatedMessage.id,
@@ -1060,9 +1273,7 @@ export default function ConversationMessages({
       const result = (await response.json()) as DeleteResponse;
 
       if (!response.ok || !result.deleted) {
-        throw new Error(
-          result.error || "Unable to delete this message."
-        );
+        throw new Error(result.error || "Unable to delete this message.");
       }
 
       liveOverridesRef.current.set(messageId, null);
@@ -1138,15 +1349,11 @@ export default function ConversationMessages({
           throw new Error(deleteError.message);
         }
 
-        reactionOverrides.current.set(
-          getReactionRowKey(existing),
-          null
-        );
+        reactionOverrides.current.set(getReactionRowKey(existing), null);
 
         setReactionRows((current) =>
           current.filter(
-            (row) =>
-              getReactionRowKey(row) !== getReactionRowKey(existing)
+            (row) => getReactionRowKey(row) !== getReactionRowKey(existing)
           )
         );
       } else {
@@ -1165,9 +1372,7 @@ export default function ConversationMessages({
         }
 
         if (!data) {
-          throw new Error(
-            "The reaction was not saved. Please try again."
-          );
+          throw new Error("The reaction was not saved. Please try again.");
         }
 
         const reaction = data as MessageReaction;
@@ -1259,11 +1464,18 @@ export default function ConversationMessages({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (sending || uploadingFile) return;
+
+    if (selectedFile) {
+      await sendAttachment(selectedFile);
+      return;
+    }
+
     const body = draft.trim();
 
-    if (!body || sending) return;
+    if (!body) return;
 
-    if (body.length > 5000) {
+    if (body.length > MAX_MESSAGE_LENGTH) {
       setError("Messages cannot exceed 5,000 characters.");
       return;
     }
@@ -1287,9 +1499,7 @@ export default function ConversationMessages({
       const result = (await response.json()) as SendResponse;
 
       if (!response.ok || !result.message) {
-        throw new Error(
-          result.error || "Unable to send your message."
-        );
+        throw new Error(result.error || "Unable to send your message.");
       }
 
       shouldAutoScroll.current = true;
@@ -1321,18 +1531,14 @@ export default function ConversationMessages({
   );
 
   const onlineParticipantNames = otherParticipants
-    .filter((participant) =>
-      onlineUserIds.includes(participant.user_id)
-    )
+    .filter((participant) => onlineUserIds.includes(participant.user_id))
     .map(
       (participant) =>
         participant.full_name?.trim() || "RuffNeck member"
     );
 
   const typingParticipantNames = otherParticipants
-    .filter((participant) =>
-      typingUserIds.includes(participant.user_id)
-    )
+    .filter((participant) => typingUserIds.includes(participant.user_id))
     .map(
       (participant) =>
         participant.full_name?.trim() || "A participant"
@@ -1369,9 +1575,7 @@ export default function ConversationMessages({
             <span
               aria-hidden="true"
               style={{
-                color: onlineParticipantNames.length
-                  ? "#16a34a"
-                  : "#9ca3af",
+                color: onlineParticipantNames.length ? "#16a34a" : "#9ca3af",
                 marginRight: 5,
               }}
             >
@@ -1422,9 +1626,7 @@ export default function ConversationMessages({
             id="conversation-message-search"
             type="search"
             value={messageSearch}
-            onChange={(event) =>
-              setMessageSearch(event.target.value)
-            }
+            onChange={(event) => setMessageSearch(event.target.value)}
             placeholder="Find words in this conversation…"
             maxLength={120}
             aria-describedby="conversation-message-search-status"
@@ -1509,16 +1711,16 @@ export default function ConversationMessages({
           <div className="empty-state">
             <h2>Start the conversation</h2>
             <p className="muted">
-              Send a message to begin discussing your shared interests
-              or intention.
+              Send a message or share a file to begin discussing your shared
+              interests or intention.
             </p>
           </div>
         ) : filteredMessages.length === 0 ? (
           <div className="empty-state">
             <h2>No matching messages</h2>
             <p className="muted">
-              No loaded message contains “{messageSearch.trim()}”. Clear
-              the search or load earlier messages to expand the search.
+              No loaded message contains “{messageSearch.trim()}”. Clear the
+              search or load earlier messages to expand the search.
             </p>
             <button
               type="button"
@@ -1530,21 +1732,18 @@ export default function ConversationMessages({
           </div>
         ) : (
           filteredMessages.map((message) => {
-            const isOwnMessage =
-              message.sender_id === currentUserId;
+            const isOwnMessage = message.sender_id === currentUserId;
 
             const senderName = isOwnMessage
               ? "You"
               : participants.find(
-                  (participant) =>
-                    participant.user_id === message.sender_id
+                  (participant) => participant.user_id === message.sender_id
                 )?.full_name?.trim() || "RuffNeck member";
 
+            const attachment = parseChatAttachment(message.body);
+
             const replyTarget = message.reply_to_message_id
-              ? messages.find(
-                  (item) =>
-                    item.id === message.reply_to_message_id
-                ) ??
+              ? messages.find((item) => item.id === message.reply_to_message_id) ??
                 message.reply_to ??
                 null
               : null;
@@ -1562,14 +1761,10 @@ export default function ConversationMessages({
               <article
                 key={message.id}
                 className={`message-bubble ${
-                  isOwnMessage
-                    ? "message-own"
-                    : "message-other"
+                  isOwnMessage ? "message-own" : "message-other"
                 }`}
               >
-                <span className="message-sender">
-                  {senderName}
-                </span>
+                <span className="message-sender">{senderName}</span>
 
                 {message.reply_to_message_id && (
                   <div
@@ -1577,8 +1772,7 @@ export default function ConversationMessages({
                       marginTop: 8,
                       marginBottom: 8,
                       padding: "8px 10px",
-                      borderLeft:
-                        "3px solid var(--cyan, #00b4d8)",
+                      borderLeft: "3px solid var(--cyan, #00b4d8)",
                       borderRadius: "0 8px 8px 0",
                       background: "rgba(0,180,216,0.08)",
                       maxWidth: "100%",
@@ -1605,9 +1799,9 @@ export default function ConversationMessages({
                       {replyTarget?.deleted_at
                         ? "Original message was deleted"
                         : replyTarget?.body
-                          ? replyTarget.body.length > 180
-                            ? `${replyTarget.body.slice(0, 177)}…`
-                            : replyTarget.body
+                          ? getMessagePreview(replyTarget.body).length > 180
+                            ? `${getMessagePreview(replyTarget.body).slice(0, 177)}…`
+                            : getMessagePreview(replyTarget.body)
                           : "Original message is unavailable"}
                     </div>
                   </div>
@@ -1627,10 +1821,7 @@ export default function ConversationMessages({
                 )}
 
                 {editingMessageId === message.id ? (
-                  <form
-                    onSubmit={saveEdit}
-                    style={{ marginTop: 8 }}
-                  >
+                  <form onSubmit={saveEdit} style={{ marginTop: 8 }}>
                     <label
                       htmlFor={`edit-message-${message.id}`}
                       className="muted"
@@ -1646,10 +1837,8 @@ export default function ConversationMessages({
                     <textarea
                       id={`edit-message-${message.id}`}
                       value={editDraft}
-                      onChange={(event) =>
-                        setEditDraft(event.target.value)
-                      }
-                      maxLength={5000}
+                      onChange={(event) => setEditDraft(event.target.value)}
+                      maxLength={MAX_MESSAGE_LENGTH}
                       rows={3}
                       required
                       disabled={savingEdit}
@@ -1679,14 +1868,20 @@ export default function ConversationMessages({
                       <button
                         type="submit"
                         className="button-primary"
-                        disabled={
-                          savingEdit || !editDraft.trim()
-                        }
+                        disabled={savingEdit || !editDraft.trim()}
                       >
                         {savingEdit ? "Saving…" : "Save edit"}
                       </button>
                     </div>
                   </form>
+                ) : attachment ? (
+                  <div style={{ marginTop: 8, maxWidth: "100%" }}>
+                    <ConversationAttachment
+                      attachment={attachment}
+                      conversationId={conversationId}
+                      currentUserId={currentUserId}
+                    />
+                  </div>
                 ) : (
                   <p
                     style={{
@@ -1717,10 +1912,7 @@ export default function ConversationMessages({
                       `${message.id}|${emoji}`
                     );
 
-                    const selected = Boolean(
-                      summary?.reactedByMe
-                    );
-
+                    const selected = Boolean(summary?.reactedByMe);
                     const toggleKey = `${message.id}|${emoji}`;
 
                     return (
@@ -1741,12 +1933,7 @@ export default function ConversationMessages({
                           Boolean(togglingReactionKey) ||
                           Boolean(deletingMessageId)
                         }
-                        onClick={() =>
-                          void toggleReaction(
-                            message.id,
-                            emoji
-                          )
-                        }
+                        onClick={() => void toggleReaction(message.id, emoji)}
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
@@ -1762,14 +1949,10 @@ export default function ConversationMessages({
                             ? "rgba(0,180,216,0.12)"
                             : "transparent",
                           opacity:
-                            togglingReactionKey === toggleKey
-                              ? 0.65
-                              : 1,
+                            togglingReactionKey === toggleKey ? 0.65 : 1,
                         }}
                       >
-                        <span aria-hidden="true">
-                          {emoji}
-                        </span>
+                        <span aria-hidden="true">{emoji}</span>
                         {(summary?.count ?? 0) > 0 && (
                           <span>{summary?.count}</span>
                         )}
@@ -1814,16 +1997,13 @@ export default function ConversationMessages({
                       Reply
                     </button>
 
-                    {isOwnMessage && (
+                    {isOwnMessage && !attachment && (
                       <>
                         <button
                           type="button"
                           className="button-secondary"
                           onClick={() => beginEdit(message)}
-                          disabled={
-                            Boolean(deletingMessageId) ||
-                            savingEdit
-                          }
+                          disabled={Boolean(deletingMessageId) || savingEdit}
                           style={{
                             padding: "5px 10px",
                             fontSize: 12,
@@ -1835,13 +2015,8 @@ export default function ConversationMessages({
                         <button
                           type="button"
                           className="button-secondary"
-                          onClick={() =>
-                            void deleteMessage(message.id)
-                          }
-                          disabled={
-                            Boolean(deletingMessageId) ||
-                            savingEdit
-                          }
+                          onClick={() => void deleteMessage(message.id)}
+                          disabled={Boolean(deletingMessageId) || savingEdit}
                           style={{
                             padding: "5px 10px",
                             fontSize: 12,
@@ -1852,6 +2027,23 @@ export default function ConversationMessages({
                             : "Delete"}
                         </button>
                       </>
+                    )}
+
+                    {isOwnMessage && attachment && (
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => void deleteMessage(message.id)}
+                        disabled={Boolean(deletingMessageId) || savingEdit}
+                        style={{
+                          padding: "5px 10px",
+                          fontSize: 12,
+                        }}
+                      >
+                        {deletingMessageId === message.id
+                          ? "Deleting…"
+                          : "Delete"}
+                      </button>
                     )}
                   </div>
                 )}
@@ -1873,10 +2065,7 @@ export default function ConversationMessages({
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit}
-        className="message-compose"
-      >
+      <form onSubmit={handleSubmit} className="message-compose">
         {replyingTo && (
           <div
             style={{
@@ -1887,8 +2076,7 @@ export default function ConversationMessages({
               marginBottom: 12,
               padding: 10,
               border: "1px solid var(--border, #d1d5db)",
-              borderLeft:
-                "3px solid var(--cyan, #00b4d8)",
+              borderLeft: "3px solid var(--cyan, #00b4d8)",
               borderRadius: 8,
             }}
           >
@@ -1899,10 +2087,8 @@ export default function ConversationMessages({
                   ? "your message"
                   : participants.find(
                       (participant) =>
-                        participant.user_id ===
-                        replyingTo.sender_id
-                    )?.full_name?.trim() ||
-                    "RuffNeck member"}
+                        participant.user_id === replyingTo.sender_id
+                    )?.full_name?.trim() || "RuffNeck member"}
               </strong>
 
               <p
@@ -1914,9 +2100,9 @@ export default function ConversationMessages({
                   overflowWrap: "anywhere",
                 }}
               >
-                {replyingTo.body.length > 180
-                  ? `${replyingTo.body.slice(0, 177)}…`
-                  : replyingTo.body}
+                {getMessagePreview(replyingTo.body).length > 180
+                  ? `${getMessagePreview(replyingTo.body).slice(0, 177)}…`
+                  : getMessagePreview(replyingTo.body)}
               </p>
             </div>
 
@@ -1926,13 +2112,110 @@ export default function ConversationMessages({
               aria-label="Cancel reply"
               title="Cancel reply"
               onClick={() => setReplyingTo(null)}
-              disabled={sending}
+              disabled={sending || uploadingFile}
               style={{
                 padding: "2px 8px",
                 lineHeight: 1.5,
               }}
             >
               ×
+            </button>
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 10,
+          }}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.txt,image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            aria-label="Choose a file to attach"
+            disabled={sending || uploadingFile}
+            onChange={(event) => {
+              handleFileSelection(event.target.files?.[0] ?? null);
+            }}
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              padding: 0,
+              margin: -1,
+              overflow: "hidden",
+              clip: "rect(0, 0, 0, 0)",
+              whiteSpace: "nowrap",
+              border: 0,
+            }}
+          />
+
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || uploadingFile}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              padding: "8px 12px",
+            }}
+          >
+            Attach file
+          </button>
+
+          <span className="muted" style={{ fontSize: 12 }}>
+            JPG, PNG, WebP, PDF, DOC, DOCX or TXT · Maximum 10 MB
+          </span>
+        </div>
+
+        {selectedFile && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              padding: "10px 12px",
+              marginBottom: 12,
+              border: "1px solid var(--border, #d1d5db)",
+              borderRadius: 8,
+              background: "var(--surface, #fff)",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <strong
+                style={{
+                  display: "block",
+                  overflowWrap: "anywhere",
+                  fontSize: 13,
+                }}
+              >
+                {selectedFile.name}
+              </strong>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {formatFileSize(selectedFile.size)}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={clearSelectedFile}
+              disabled={sending || uploadingFile}
+              style={{
+                padding: "5px 10px",
+                fontSize: 12,
+              }}
+            >
+              Remove file
             </button>
           </div>
         )}
@@ -1945,29 +2228,40 @@ export default function ConversationMessages({
           id="message-body"
           name="body"
           value={draft}
-          onChange={(event) =>
-            handleDraftChange(event.target.value)
-          }
+          onChange={(event) => handleDraftChange(event.target.value)}
           onBlur={stopTyping}
-          minLength={1}
-          maxLength={5000}
+          maxLength={MAX_MESSAGE_LENGTH}
           rows={3}
-          placeholder="Write a message..."
-          required
-          disabled={sending}
+          placeholder={
+            selectedFile
+              ? "Send the file first, then send your message separately..."
+              : "Write a message..."
+          }
+          disabled={sending || uploadingFile}
         />
 
         <div className="message-compose-footer">
           <span className="muted">
-            {draft.trim().length}/5,000 characters
+            {draft.trim().length.toLocaleString()}/
+            {MAX_MESSAGE_LENGTH.toLocaleString()} characters
           </span>
 
           <button
             type="submit"
             className="button-primary"
-            disabled={sending || !draft.trim()}
+            disabled={
+              sending ||
+              uploadingFile ||
+              (!draft.trim() && !selectedFile)
+            }
           >
-            {sending ? "Sending…" : "Send message"}
+            {uploadingFile
+              ? "Uploading file…"
+              : sending
+                ? "Sending…"
+                : selectedFile
+                  ? "Send file"
+                  : "Send message"}
           </button>
         </div>
       </form>
