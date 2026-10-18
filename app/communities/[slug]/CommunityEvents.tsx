@@ -282,6 +282,62 @@ function downloadCalendarInvite(eventItem: CommunityEvent) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+async function shareEvent(eventItem: CommunityEvent): Promise<"shared" | "copied"> {
+  const eventUrl = new URL(window.location.href);
+  eventUrl.hash = `community-event-${eventItem.id}`;
+
+  const shareData = {
+    title: eventItem.title,
+    text: [
+      `Join this ${eventModeLabel(eventItem.event_mode).toLowerCase()} community event.`,
+      `Date: ${formatEventDate(eventItem.starts_at)}`,
+      eventItem.location ? `Location: ${eventItem.location}` : "",
+      eventItem.meeting_url ? `Meeting link: ${eventItem.meeting_url}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    url: eventUrl.toString(),
+  };
+
+  if (
+    typeof navigator.share === "function" &&
+    (!navigator.canShare || navigator.canShare(shareData))
+  ) {
+    try {
+      await navigator.share(shareData);
+      return "shared";
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw error;
+      }
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(
+      `${shareData.title}\n${shareData.text}\n${shareData.url}`
+    );
+    return "copied";
+  } catch {
+    const input = document.createElement("textarea");
+    input.value = eventUrl.toString();
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+
+    const copied = document.execCommand("copy");
+    input.remove();
+
+    if (!copied) {
+      throw new Error("Copy to clipboard failed.");
+    }
+
+    return "copied";
+  }
+}
+
 export default function CommunityEvents({
   communityId,
   canManage,
@@ -304,6 +360,7 @@ export default function CommunityEvents({
   const [savingEdit, setSavingEdit] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [busyEventId, setBusyEventId] = useState<string | null>(null);
+  const [sharingEventId, setSharingEventId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -345,15 +402,11 @@ export default function CommunityEvents({
         setRsvps({});
         setAttendees({});
         setAttendeeError("");
-        setError(
-          `Events could not be loaded: ${eventsError.message}`
-        );
+        setError(`Events could not be loaded: ${eventsError.message}`);
         return;
       }
 
       const rows = (data ?? []) as unknown as CommunityEvent[];
-
-      // Render the primary event data before loading optional RSVP details.
       setEvents(rows);
 
       if (rows.length === 0) {
@@ -515,7 +568,6 @@ export default function CommunityEvents({
         return;
       }
 
-      // Show the newly created event immediately, even if a later refresh fails.
       setEvents((current) => {
         const withoutDuplicate = current.filter(
           (eventItem) => eventItem.id !== createdEvent.id
@@ -535,7 +587,6 @@ export default function CommunityEvents({
       setMessage("Community event created.");
       setError("");
 
-      // Refresh secondary information without losing the newly created event.
       await loadEvents();
     } catch (createError) {
       console.error("Create community event failed:", createError);
@@ -677,6 +728,38 @@ export default function CommunityEvents({
     }
   }
 
+  async function handleShareEvent(eventItem: CommunityEvent) {
+    if (sharingEventId) return;
+
+    setSharingEventId(eventItem.id);
+    setError("");
+    setMessage("");
+
+    try {
+      const result = await shareEvent(eventItem);
+
+      setMessage(
+        result === "shared"
+          ? "Event sharing opened."
+          : "Event details and link copied. You can now share them."
+      );
+    } catch (shareError) {
+      if (
+        shareError instanceof Error &&
+        shareError.name === "AbortError"
+      ) {
+        return;
+      }
+
+      console.error("Share community event failed:", shareError);
+      setError(
+        "The event could not be shared automatically. Copy the page address from your browser to share it."
+      );
+    } finally {
+      setSharingEventId(null);
+    }
+  }
+
   async function cancelEvent(eventItem: CommunityEvent) {
     if (!canManage || busyEventId) return;
 
@@ -743,41 +826,64 @@ export default function CommunityEvents({
     );
   });
 
+  const upcomingCount = events.filter(
+    (eventItem) =>
+      eventItem.status === "scheduled" &&
+      new Date(eventItem.starts_at).getTime() >= now
+  ).length;
+
   return (
     <section
       className="section rn-community-events"
       aria-labelledby="rn-community-events-heading"
     >
-      <div className="section-heading rn-community-events-heading">
-        <div>
-          <span className="eyebrow">MEET · CONNECT · BUILD</span>
+      <div className="rn-events-intro">
+        <div className="rn-events-intro-copy">
+          <span className="rn-events-eyebrow">MEET · CONNECT · BUILD</span>
           <h2 id="rn-community-events-heading">Community events</h2>
-          <p className="muted">
-            Create meetups, share meeting details, and manage your RSVP.
+          <p>
+            Bring your community together through meetups, conversations, and
+            shared opportunities.
           </p>
         </div>
 
-        <div className="rn-community-events-heading-actions">
-          <span className="status-badge status-active">
-            {events.length} {events.length === 1 ? "event" : "events"}
-          </span>
-
+        <div className="rn-events-summary">
+          <div className="rn-events-stat">
+            <span className="rn-events-stat-number">{events.length}</span>
+            <span>Total events</span>
+          </div>
+          <div className="rn-events-stat">
+            <span className="rn-events-stat-number">{upcomingCount}</span>
+            <span>Upcoming</span>
+          </div>
           <button
-            className="button button-secondary"
+            className="rn-events-refresh"
             type="button"
             onClick={() => void loadEvents()}
             disabled={loading}
           >
+            <span aria-hidden="true">↻</span>
             {loading ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </div>
 
       {canManage && (
-        <details className="feature-card rn-community-event-create">
-          <summary>Create an event</summary>
+        <details className="rn-event-create">
+          <summary>
+            <span className="rn-event-create-icon" aria-hidden="true">
+              +
+            </span>
+            <span>
+              <strong>Create an event</strong>
+              <small>Publish a meetup for your community</small>
+            </span>
+            <span className="rn-event-create-chevron" aria-hidden="true">
+              +
+            </span>
+          </summary>
 
-          <form className="rn-community-event-form" onSubmit={createEvent}>
+          <form className="rn-event-form" onSubmit={createEvent}>
             <label>
               Event title
               <input
@@ -800,7 +906,7 @@ export default function CommunityEvents({
               />
             </label>
 
-            <div className="rn-community-event-form-grid">
+            <div className="rn-event-form-grid">
               <label>
                 Event format
                 <select name="event_mode" defaultValue="online">
@@ -841,88 +947,107 @@ export default function CommunityEvents({
               />
             </label>
 
-            <div className="rn-community-event-form-footer">
-              <p className="muted">
-                Only community owners and active moderators can manage events.
-              </p>
-
+            <div className="rn-event-form-footer">
+              <p>Only community owners and active moderators can manage events.</p>
               <button
-                className="button button-primary"
+                className="rn-event-button rn-event-button-primary"
                 type="submit"
                 disabled={creating}
               >
-                {creating ? "Creating…" : "Publish event"}
+                {creating ? "Publishing…" : "Publish event"}
               </button>
             </div>
           </form>
         </details>
       )}
 
-      <div
-        className="rn-community-event-toolbar"
-        aria-label="Filter community events"
-      >
-        <button
-          type="button"
-          className={`button ${
-            showAll ? "button-secondary" : "button-primary"
-          }`}
-          onClick={() => setShowAll(false)}
-          aria-pressed={!showAll}
-        >
-          Upcoming
-        </button>
+      <div className="rn-events-toolbar">
+        <div className="rn-events-tabs" aria-label="Filter community events">
+          <button
+            type="button"
+            className={!showAll ? "active" : ""}
+            onClick={() => setShowAll(false)}
+            aria-pressed={!showAll}
+          >
+            Upcoming
+            <span>{upcomingCount}</span>
+          </button>
+          <button
+            type="button"
+            className={showAll ? "active" : ""}
+            onClick={() => setShowAll(true)}
+            aria-pressed={showAll}
+          >
+            All events
+            <span>{events.length}</span>
+          </button>
+        </div>
 
-        <button
-          type="button"
-          className={`button ${
-            showAll ? "button-primary" : "button-secondary"
-          }`}
-          onClick={() => setShowAll(true)}
-          aria-pressed={showAll}
-        >
-          All events
-        </button>
+        <span className="rn-events-timezone">
+          Times shown in your local timezone
+        </span>
       </div>
 
       {error && (
-        <p
-          className="rn-community-event-message rn-community-event-error"
-          role="alert"
-        >
+        <p className="rn-event-alert rn-event-alert-error" role="alert">
+          <span aria-hidden="true">!</span>
           {error}
         </p>
       )}
 
       {message && (
         <p
-          className="rn-community-event-message rn-community-event-success"
+          className="rn-event-alert rn-event-alert-success"
           role="status"
           aria-live="polite"
         >
+          <span aria-hidden="true">✓</span>
           {message}
         </p>
       )}
 
       {loading && events.length === 0 ? (
-        <div className="empty-state">
-          <p>Loading community events…</p>
+        <div className="rn-events-empty">
+          <span className="rn-events-empty-icon" aria-hidden="true">
+            ◷
+          </span>
+          <h3>Loading your events</h3>
+          <p>Community events will appear here shortly.</p>
         </div>
       ) : visibleEvents.length === 0 ? (
-        <div className="empty-state">
-          <h3>
-            {showAll
-              ? "No events have been published"
-              : "No upcoming events"}
-          </h3>
+        <div className="rn-events-empty">
+          <span className="rn-events-empty-icon" aria-hidden="true">
+            ◷
+          </span>
+          <h3>{showAll ? "No events published yet" : "Nothing coming up"}</h3>
           <p>
             {canManage
-              ? "Create an event to bring community members together."
+              ? "Create your first event to bring community members together."
               : "Check back later for community meetups and sessions."}
           </p>
+          {canManage && (
+            <button
+              className="rn-event-button rn-event-button-primary"
+              type="button"
+              onClick={() => {
+                const details = document.querySelector<HTMLDetailsElement>(
+                  ".rn-event-create"
+                );
+                if (details) {
+                  details.open = true;
+                  details.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                  });
+                }
+              }}
+            >
+              + Create an event
+            </button>
+          )}
         </div>
       ) : (
-        <div className="rn-community-event-grid">
+        <div className="rn-events-list">
           {visibleEvents.map((eventItem) => {
             const isPast =
               new Date(eventItem.starts_at).getTime() < Date.now();
@@ -930,338 +1055,385 @@ export default function CommunityEvents({
             const completed = eventItem.status === "completed";
             const eventAttendees = attendees[eventItem.id] ?? [];
             const isBusy = busyEventId === eventItem.id;
+            const isEditable =
+              canManage &&
+              !cancelled &&
+              !completed &&
+              !isPast &&
+              eventItem.status === "scheduled";
+            const statusLabel = cancelled
+              ? "Cancelled"
+              : completed
+                ? "Completed"
+                : isPast
+                  ? "Past event"
+                  : "Scheduled";
 
             return (
               <article
-                className="feature-card rn-community-event-card"
+                className={`rn-event-card ${
+                  cancelled
+                    ? "rn-event-card-cancelled"
+                    : completed || isPast
+                      ? "rn-event-card-past"
+                      : ""
+                }`}
                 key={eventItem.id}
                 id={`community-event-${eventItem.id}`}
               >
-                <div className="rn-community-event-card-top">
-                  <span className="eyebrow">
-                    {eventModeLabel(eventItem.event_mode)}
-                  </span>
+                <div className="rn-event-card-accent" />
 
-                  <span
-                    className={`status-badge ${
-                      cancelled ? "status-pending" : "status-active"
-                    }`}
-                  >
-                    {cancelled
-                      ? "Cancelled"
-                      : completed || isPast
-                        ? "Past event"
-                        : "Scheduled"}
-                  </span>
-                </div>
+                <div className="rn-event-card-content">
+                  <div className="rn-event-card-header">
+                    <div className="rn-event-mode">
+                      <span
+                        className="rn-event-mode-dot"
+                        aria-hidden="true"
+                      />
+                      {eventModeLabel(eventItem.event_mode)}
+                    </div>
 
-                <h3>{eventItem.title}</h3>
+                    <span
+                      className={`rn-event-status ${
+                        cancelled
+                          ? "is-cancelled"
+                          : completed || isPast
+                            ? "is-past"
+                            : "is-scheduled"
+                      }`}
+                    >
+                      <span aria-hidden="true">
+                        {cancelled ? "×" : completed || isPast ? "✓" : "●"}
+                      </span>
+                      {statusLabel}
+                    </span>
+                  </div>
 
-                <p className="rn-community-event-date">
-                  {formatEventDate(eventItem.starts_at)}
-                </p>
+                  <h3 className="rn-event-title">{eventItem.title}</h3>
 
-                {eventItem.ends_at && (
-                  <p className="muted">
-                    Ends {formatEventDate(eventItem.ends_at)}
-                  </p>
-                )}
+                  <div className="rn-event-details">
+                    <div className="rn-event-detail">
+                      <span className="rn-event-detail-icon" aria-hidden="true">
+                        ◷
+                      </span>
+                      <div>
+                        <strong>{formatEventDate(eventItem.starts_at)}</strong>
+                        {eventItem.ends_at && (
+                          <span>Ends {formatEventDate(eventItem.ends_at)}</span>
+                        )}
+                      </div>
+                    </div>
 
-                {eventItem.description && (
-                  <p className="rn-community-event-description">
-                    {eventItem.description}
-                  </p>
-                )}
+                    {eventItem.location && (
+                      <div className="rn-event-detail">
+                        <span
+                          className="rn-event-detail-icon"
+                          aria-hidden="true"
+                        >
+                          ⌖
+                        </span>
+                        <span>{eventItem.location}</span>
+                      </div>
+                    )}
+                  </div>
 
-                {eventItem.location && (
-                  <p className="muted">
-                    <strong>Location:</strong> {eventItem.location}
-                  </p>
-                )}
+                  {eventItem.description && (
+                    <p className="rn-event-description">
+                      {eventItem.description}
+                    </p>
+                  )}
 
-                {eventItem.meeting_url && !cancelled && (
-                  <p>
+                  {eventItem.meeting_url && !cancelled && (
                     <a
+                      className="rn-event-meeting-link"
                       href={eventItem.meeting_url}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
+                      <span aria-hidden="true">↗</span>
                       Open meeting link
                     </a>
-                  </p>
-                )}
-
-                {canManage &&
-                  editingEventId === eventItem.id &&
-                  !cancelled &&
-                  !completed &&
-                  !isPast && (
-                    <form
-                      key={`edit-${eventItem.id}`}
-                      className="rn-community-event-form rn-community-event-edit-form"
-                      onSubmit={(formEvent) =>
-                        void saveEventChanges(formEvent, eventItem)
-                      }
-                    >
-                      <h4>Edit event</h4>
-
-                      <label>
-                        Event title
-                        <input
-                          name="title"
-                          type="text"
-                          minLength={3}
-                          maxLength={120}
-                          required
-                          defaultValue={eventItem.title}
-                        />
-                      </label>
-
-                      <label>
-                        Description
-                        <textarea
-                          name="description"
-                          maxLength={2000}
-                          rows={3}
-                          defaultValue={eventItem.description ?? ""}
-                        />
-                      </label>
-
-                      <div className="rn-community-event-form-grid">
-                        <label>
-                          Event format
-                          <select
-                            name="event_mode"
-                            defaultValue={eventItem.event_mode}
-                          >
-                            <option value="online">Online</option>
-                            <option value="in_person">In person</option>
-                            <option value="hybrid">Hybrid</option>
-                          </select>
-                        </label>
-
-                        <label>
-                          Location
-                          <input
-                            name="location"
-                            type="text"
-                            maxLength={240}
-                            defaultValue={eventItem.location ?? ""}
-                          />
-                        </label>
-
-                        <label>
-                          Starts at
-                          <input
-                            name="starts_at"
-                            type="datetime-local"
-                            required
-                            defaultValue={toLocalDateTimeInput(
-                              eventItem.starts_at
-                            )}
-                          />
-                        </label>
-
-                        <label>
-                          Ends at
-                          <input
-                            name="ends_at"
-                            type="datetime-local"
-                            defaultValue={toLocalDateTimeInput(
-                              eventItem.ends_at
-                            )}
-                          />
-                        </label>
-                      </div>
-
-                      <label>
-                        Meeting link
-                        <input
-                          name="meeting_url"
-                          type="url"
-                          maxLength={1000}
-                          placeholder="https://…"
-                          defaultValue={eventItem.meeting_url ?? ""}
-                        />
-                      </label>
-
-                      <div className="rn-community-event-form-footer">
-                        <p className="muted">
-                          Changes will be visible to community members.
-                        </p>
-
-                        <div className="rn-community-event-card-actions">
-                          <button
-                            className="button button-primary"
-                            type="submit"
-                            disabled={savingEdit}
-                          >
-                            {savingEdit ? "Saving…" : "Save changes"}
-                          </button>
-
-                          <button
-                            className="button button-secondary"
-                            type="button"
-                            onClick={() => setEditingEventId(null)}
-                            disabled={savingEdit}
-                          >
-                            Discard changes
-                          </button>
-                        </div>
-                      </div>
-                    </form>
-                  )}
-
-                {canManage && (
-                  <div className="rn-community-event-attendance">
-                    {attendeeError ? (
-                      <p className="muted" role="status">
-                        Attendee list unavailable.
-                      </p>
-                    ) : (
-                      <>
-                        <span className="status-badge status-active">
-                          {eventAttendees.length} attending
-                        </span>
-
-                        <details className="rn-community-event-attendee-details">
-                          <summary>View attendee list</summary>
-
-                          {eventAttendees.length === 0 ? (
-                            <p className="muted">No one has RSVP&apos;d yet.</p>
-                          ) : (
-                            <>
-                              <ul className="rn-community-event-attendee-list">
-                                {eventAttendees.map((attendee) => (
-                                  <li
-                                    key={`${attendee.event_id}-${attendee.user_id}`}
-                                  >
-                                    <span>{attendee.name}</span>
-                                    <time dateTime={attendee.created_at}>
-                                      {formatEventDate(attendee.created_at)}
-                                    </time>
-                                  </li>
-                                ))}
-                              </ul>
-
-                              <button
-                                type="button"
-                                className="button button-secondary"
-                                onClick={() => {
-                                  try {
-                                    downloadAttendeeCsv(
-                                      eventItem,
-                                      eventAttendees
-                                    );
-                                    setError("");
-                                    setMessage("Attendee CSV downloaded.");
-                                  } catch (exportError) {
-                                    console.error(
-                                      "Download attendee CSV failed:",
-                                      exportError
-                                    );
-                                    setError(
-                                      "The attendee list could not be exported."
-                                    );
-                                  }
-                                }}
-                              >
-                                Export attendees CSV
-                              </button>
-                            </>
-                          )}
-                        </details>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                <div className="rn-community-event-card-actions">
-                  {canRsvp && !cancelled && !completed && !isPast && (
-                    <button
-                      className={`button ${
-                        rsvps[eventItem.id]
-                          ? "button-secondary"
-                          : "button-primary"
-                      }`}
-                      type="button"
-                      onClick={() => void toggleRsvp(eventItem)}
-                      disabled={isBusy}
-                    >
-                      {isBusy
-                        ? "Saving…"
-                        : rsvps[eventItem.id]
-                          ? "Cancel my RSVP"
-                          : "I'm going"}
-                    </button>
-                  )}
-
-                  {rsvps[eventItem.id] && (
-                    <span className="status-badge status-active">
-                      RSVP confirmed
-                    </span>
-                  )}
-
-                  {!cancelled && !completed && !isPast && (
-                    <button
-                      className="button button-secondary"
-                      type="button"
-                      onClick={() => {
-                        try {
-                          downloadCalendarInvite(eventItem);
-                          setError("");
-                          setMessage(
-                            eventItem.ends_at
-                              ? "Calendar invitation downloaded."
-                              : "Calendar invitation downloaded with a one-hour duration."
-                          );
-                        } catch (calendarError) {
-                          console.error(
-                            "Download calendar invite failed:",
-                            calendarError
-                          );
-                          setError(
-                            "The calendar invitation could not be downloaded."
-                          );
-                        }
-                      }}
-                    >
-                      Add to calendar
-                    </button>
                   )}
 
                   {canManage &&
-                    !cancelled &&
-                    !completed &&
-                    !isPast && (
-                      <button
-                        className="button button-secondary"
-                        type="button"
-                        onClick={() => {
-                          setError("");
-                          setMessage("");
-                          setEditingEventId((current) =>
-                            current === eventItem.id ? null : eventItem.id
-                          );
-                        }}
-                        disabled={savingEdit || isBusy}
+                    editingEventId === eventItem.id &&
+                    isEditable && (
+                      <form
+                        key={`edit-${eventItem.id}`}
+                        className="rn-event-form rn-event-edit-form"
+                        onSubmit={(formEvent) =>
+                          void saveEventChanges(formEvent, eventItem)
+                        }
                       >
-                        {editingEventId === eventItem.id
-                          ? "Close editor"
-                          : "Edit event"}
-                      </button>
+                        <h4>Edit event details</h4>
+
+                        <label>
+                          Event title
+                          <input
+                            name="title"
+                            type="text"
+                            minLength={3}
+                            maxLength={120}
+                            required
+                            defaultValue={eventItem.title}
+                          />
+                        </label>
+
+                        <label>
+                          Description
+                          <textarea
+                            name="description"
+                            maxLength={2000}
+                            rows={3}
+                            defaultValue={eventItem.description ?? ""}
+                          />
+                        </label>
+
+                        <div className="rn-event-form-grid">
+                          <label>
+                            Event format
+                            <select
+                              name="event_mode"
+                              defaultValue={eventItem.event_mode}
+                            >
+                              <option value="online">Online</option>
+                              <option value="in_person">In person</option>
+                              <option value="hybrid">Hybrid</option>
+                            </select>
+                          </label>
+
+                          <label>
+                            Location
+                            <input
+                              name="location"
+                              type="text"
+                              maxLength={240}
+                              defaultValue={eventItem.location ?? ""}
+                            />
+                          </label>
+
+                          <label>
+                            Starts at
+                            <input
+                              name="starts_at"
+                              type="datetime-local"
+                              required
+                              defaultValue={toLocalDateTimeInput(
+                                eventItem.starts_at
+                              )}
+                            />
+                          </label>
+
+                          <label>
+                            Ends at
+                            <input
+                              name="ends_at"
+                              type="datetime-local"
+                              defaultValue={toLocalDateTimeInput(
+                                eventItem.ends_at
+                              )}
+                            />
+                          </label>
+                        </div>
+
+                        <label>
+                          Meeting link
+                          <input
+                            name="meeting_url"
+                            type="url"
+                            maxLength={1000}
+                            placeholder="https://…"
+                            defaultValue={eventItem.meeting_url ?? ""}
+                          />
+                        </label>
+
+                        <div className="rn-event-form-footer">
+                          <p>Changes will be visible to community members.</p>
+                          <div className="rn-event-actions">
+                            <button
+                              className="rn-event-button rn-event-button-primary"
+                              type="submit"
+                              disabled={savingEdit}
+                            >
+                              {savingEdit ? "Saving…" : "Save changes"}
+                            </button>
+                            <button
+                              className="rn-event-button rn-event-button-light"
+                              type="button"
+                              onClick={() => setEditingEventId(null)}
+                              disabled={savingEdit}
+                            >
+                              Discard
+                            </button>
+                          </div>
+                        </div>
+                      </form>
                     )}
 
-                  {canManage && !cancelled && !completed && !isPast && (
-                    <button
-                      className="button button-secondary"
-                      type="button"
-                      onClick={() => void cancelEvent(eventItem)}
-                      disabled={isBusy || savingEdit}
-                    >
-                      {isBusy ? "Processing…" : "Cancel event"}
-                    </button>
+                  {canManage && (
+                    <div className="rn-event-attendance">
+                      {attendeeError ? (
+                        <p className="rn-event-muted" role="status">
+                          Attendee list unavailable.
+                        </p>
+                      ) : (
+                        <>
+                          <span className="rn-event-attendance-count">
+                            <span aria-hidden="true">♙</span>
+                            {eventAttendees.length} attending
+                          </span>
+
+                          <details className="rn-event-attendee-details">
+                            <summary>View attendee list</summary>
+
+                            {eventAttendees.length === 0 ? (
+                              <p className="rn-event-muted">
+                                No one has RSVP&apos;d yet.
+                              </p>
+                            ) : (
+                              <>
+                                <ul className="rn-event-attendee-list">
+                                  {eventAttendees.map((attendee) => (
+                                    <li
+                                      key={`${attendee.event_id}-${attendee.user_id}`}
+                                    >
+                                      <span>{attendee.name}</span>
+                                      <time dateTime={attendee.created_at}>
+                                        {formatEventDate(attendee.created_at)}
+                                      </time>
+                                    </li>
+                                  ))}
+                                </ul>
+
+                                <button
+                                  type="button"
+                                  className="rn-event-button rn-event-button-light"
+                                  onClick={() => {
+                                    try {
+                                      downloadAttendeeCsv(
+                                        eventItem,
+                                        eventAttendees
+                                      );
+                                      setError("");
+                                      setMessage("Attendee CSV downloaded.");
+                                    } catch (exportError) {
+                                      console.error(
+                                        "Download attendee CSV failed:",
+                                        exportError
+                                      );
+                                      setError(
+                                        "The attendee list could not be exported."
+                                      );
+                                    }
+                                  }}
+                                >
+                                  ↓ Export attendees CSV
+                                </button>
+                              </>
+                            )}
+                          </details>
+                        </>
+                      )}
+                    </div>
                   )}
+
+                  <div className="rn-event-card-footer">
+                    <div className="rn-event-actions">
+                      {canRsvp && !cancelled && !completed && !isPast && (
+                        <button
+                          className={`rn-event-button ${
+                            rsvps[eventItem.id]
+                              ? "rn-event-button-going"
+                              : "rn-event-button-primary"
+                          }`}
+                          type="button"
+                          onClick={() => void toggleRsvp(eventItem)}
+                          disabled={isBusy}
+                        >
+                          {isBusy
+                            ? "Saving…"
+                            : rsvps[eventItem.id]
+                              ? "✓ Cancel my RSVP"
+                              : "♙ I'm going"}
+                        </button>
+                      )}
+
+                      {rsvps[eventItem.id] && (
+                        <span className="rn-event-rsvp-confirmed">
+                          ✓ RSVP confirmed
+                        </span>
+                      )}
+
+                      {!cancelled && !completed && !isPast && (
+                        <button
+                          className="rn-event-button rn-event-button-light"
+                          type="button"
+                          onClick={() => {
+                            try {
+                              downloadCalendarInvite(eventItem);
+                              setError("");
+                              setMessage(
+                                eventItem.ends_at
+                                  ? "Calendar invitation downloaded."
+                                  : "Calendar invitation downloaded with a one-hour duration."
+                              );
+                            } catch (calendarError) {
+                              console.error(
+                                "Download calendar invite failed:",
+                                calendarError
+                              );
+                              setError(
+                                "The calendar invitation could not be downloaded."
+                              );
+                            }
+                          }}
+                        >
+                          ▦ Add to calendar
+                        </button>
+                      )}
+
+                      <button
+                        className="rn-event-button rn-event-button-light"
+                        type="button"
+                        onClick={() => void handleShareEvent(eventItem)}
+                        disabled={sharingEventId === eventItem.id}
+                      >
+                        {sharingEventId === eventItem.id
+                          ? "Sharing…"
+                          : "↗ Share event"}
+                      </button>
+
+                      {isEditable && (
+                        <button
+                          className="rn-event-button rn-event-button-light"
+                          type="button"
+                          onClick={() => {
+                            setError("");
+                            setMessage("");
+                            setEditingEventId((current) =>
+                              current === eventItem.id ? null : eventItem.id
+                            );
+                          }}
+                          disabled={savingEdit || isBusy}
+                        >
+                          {editingEventId === eventItem.id
+                            ? "Close editor"
+                            : "✎ Edit event"}
+                        </button>
+                      )}
+
+                      {isEditable && (
+                        <button
+                          className="rn-event-button rn-event-button-danger"
+                          type="button"
+                          onClick={() => void cancelEvent(eventItem)}
+                          disabled={isBusy || savingEdit}
+                        >
+                          {isBusy ? "Processing…" : "Cancel event"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </article>
             );
@@ -1271,233 +1443,954 @@ export default function CommunityEvents({
 
       <style jsx global>{`
         .rn-community-events {
+          --rn-event-navy: #10243b;
+          --rn-event-blue: #145df1;
+          --rn-event-cyan: #00a7c7;
+          --rn-event-muted: #64748b;
+          --rn-event-border: #e2eaf4;
+          --rn-event-surface: #ffffff;
           margin-top: 1.5rem;
+          color: var(--rn-event-navy);
         }
 
-        .rn-community-events-heading {
-          align-items: flex-start;
-          gap: 1rem;
+        .rn-community-events *,
+        .rn-community-events *::before,
+        .rn-community-events *::after {
+          box-sizing: border-box;
         }
 
-        .rn-community-events-heading-actions {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 0.6rem;
-        }
-
-        .rn-community-event-create {
-          margin-bottom: 1rem;
-        }
-
-        .rn-community-event-create summary {
-          cursor: pointer;
-          font-weight: 800;
-        }
-
-        .rn-community-event-form {
-          display: grid;
-          gap: 1rem;
-          margin-top: 1rem;
-        }
-
-        .rn-community-event-form label {
-          display: grid;
-          gap: 0.4rem;
-          font-weight: 650;
-        }
-
-        .rn-community-event-form input,
-        .rn-community-event-form textarea,
-        .rn-community-event-form select {
-          width: 100%;
-          min-width: 0;
-          border: 1px solid #cbd5e1;
-          border-radius: 10px;
-          padding: 0.75rem 0.85rem;
-          color: #10243b;
-          background: #fff;
-          font: inherit;
-        }
-
-        .rn-community-event-form input:focus,
-        .rn-community-event-form textarea:focus,
-        .rn-community-event-form select:focus {
-          outline: 2px solid #00b4d8;
-          outline-offset: 2px;
-        }
-
-        .rn-community-event-form-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 1rem;
-        }
-
-        .rn-community-event-form-footer {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-          flex-wrap: wrap;
-        }
-
-        .rn-community-event-form-footer p {
-          margin: 0;
-        }
-
-        .rn-community-event-edit-form {
-          width: 100%;
-          margin: 1rem 0;
-          padding: 1rem;
-          border: 1px solid #dbe4ee;
-          border-radius: 12px;
-          background: #f8fafc;
-        }
-
-        .rn-community-event-edit-form h4 {
-          margin: 0;
-          font-size: 1.05rem;
-        }
-
-        .rn-community-event-toolbar {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.6rem;
-          margin: 1rem 0;
-        }
-
-        .rn-community-event-message {
-          margin: 0.75rem 0;
-          padding: 0.8rem 1rem;
-          border-radius: 10px;
-          overflow-wrap: anywhere;
-        }
-
-        .rn-community-event-error {
-          color: #9f1239;
-          background: #fff1f2;
-          border: 1px solid #fecdd3;
-        }
-
-        .rn-community-event-success {
-          color: #166534;
-          background: #f0fdf4;
-          border: 1px solid #bbf7d0;
-        }
-
-        .rn-community-event-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 1rem;
-        }
-
-        .rn-community-event-card {
-          min-width: 0;
-        }
-
-        .rn-community-event-card-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 0.75rem;
-          flex-wrap: wrap;
-        }
-
-        .rn-community-event-card h3 {
-          margin: 0.65rem 0 0.4rem;
-          overflow-wrap: anywhere;
-        }
-
-        .rn-community-event-date {
-          font-weight: 750;
-          color: #087a98;
-        }
-
-        .rn-community-event-description {
-          white-space: pre-wrap;
-          overflow-wrap: anywhere;
-          line-height: 1.6;
-        }
-
-        .rn-community-event-attendance {
+        .rn-events-intro {
           display: flex;
           align-items: flex-start;
+          justify-content: space-between;
+          gap: 1.5rem;
           flex-wrap: wrap;
-          gap: 0.65rem;
-          margin-top: 0.85rem;
+          padding: clamp(1.2rem, 3vw, 2rem);
+          margin-bottom: 1.25rem;
+          border: 1px solid var(--rn-event-border);
+          border-radius: 18px;
+          background:
+            radial-gradient(
+              circle at 100% 0%,
+              rgba(0, 180, 216, 0.11),
+              transparent 42%
+            ),
+            linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
+          box-shadow: 0 8px 28px rgba(16, 36, 59, 0.045);
         }
 
-        .rn-community-event-attendee-details {
-          flex: 1 1 100%;
+        .rn-events-intro-copy {
           min-width: 0;
-          border-top: 1px solid #e2e8f0;
-          padding-top: 0.7rem;
-          margin-top: 0.2rem;
+          flex: 1 1 300px;
         }
 
-        .rn-community-event-attendee-details summary {
-          cursor: pointer;
-          font-weight: 750;
+        .rn-events-eyebrow {
+          display: inline-block;
+          margin-bottom: 0.6rem;
+          color: #087d9b;
+          font-size: 0.72rem;
+          font-weight: 850;
+          letter-spacing: 0.14em;
         }
 
-        .rn-community-event-attendee-list {
-          list-style: none;
-          padding: 0;
-          margin: 0.65rem 0;
+        .rn-events-intro h2 {
+          margin: 0;
+          color: var(--rn-event-navy);
+          font-size: clamp(1.55rem, 3vw, 2rem);
+          font-weight: 850;
+          letter-spacing: -0.045em;
+          line-height: 1.15;
+        }
+
+        .rn-events-intro-copy p {
+          max-width: 560px;
+          margin: 0.7rem 0 0;
+          color: var(--rn-event-muted);
+          line-height: 1.7;
+        }
+
+        .rn-events-summary {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+
+        .rn-events-stat {
           display: grid;
+          gap: 0.15rem;
+          min-width: 76px;
+          color: var(--rn-event-muted);
+          font-size: 0.76rem;
+        }
+
+        .rn-events-stat-number {
+          color: var(--rn-event-navy);
+          font-size: 1.55rem;
+          font-weight: 850;
+          line-height: 1.1;
+        }
+
+        .rn-events-refresh {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           gap: 0.45rem;
+          min-height: 42px;
+          padding: 0.65rem 0.9rem;
+          border: 1px solid #d6e2f1;
+          border-radius: 10px;
+          background: #fff;
+          color: #164db6;
+          font: inherit;
+          font-size: 0.85rem;
+          font-weight: 750;
+          cursor: pointer;
+          transition:
+            background 160ms ease,
+            border-color 160ms ease,
+            transform 160ms ease;
         }
 
-        .rn-community-event-attendee-list li {
-          display: flex;
-          justify-content: space-between;
-          gap: 0.75rem;
-          align-items: flex-start;
-          padding: 0.55rem 0.65rem;
-          background: #f8fafc;
-          border-radius: 8px;
+        .rn-events-refresh:hover:not(:disabled) {
+          border-color: #a8c5ff;
+          background: #f2f7ff;
+          transform: translateY(-1px);
         }
 
-        .rn-community-event-attendee-list time {
-          color: #64748b;
-          font-size: 0.82rem;
-        }
-
-        .rn-community-event-card-actions {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 0.6rem;
-          margin-top: 1rem;
-        }
-
-        .rn-community-event-card a {
-          overflow-wrap: anywhere;
-        }
-
-        .rn-community-event-card button:disabled {
-          cursor: not-allowed;
+        .rn-events-refresh:disabled {
+          cursor: wait;
           opacity: 0.65;
         }
 
+        .rn-events-refresh span {
+          font-size: 1.2rem;
+          line-height: 1;
+        }
+
+        .rn-event-create {
+          margin-bottom: 1.25rem;
+          overflow: hidden;
+          border: 1px solid var(--rn-event-border);
+          border-radius: 15px;
+          background: var(--rn-event-surface);
+          box-shadow: 0 4px 18px rgba(16, 36, 59, 0.035);
+        }
+
+        .rn-event-create > summary {
+          display: flex;
+          align-items: center;
+          gap: 0.85rem;
+          min-height: 78px;
+          padding: 1rem 1.2rem;
+          list-style: none;
+          cursor: pointer;
+          transition: background 160ms ease;
+        }
+
+        .rn-event-create > summary::-webkit-details-marker {
+          display: none;
+        }
+
+        .rn-event-create > summary:hover {
+          background: #f8fbff;
+        }
+
+        .rn-event-create-icon {
+          display: grid;
+          place-items: center;
+          flex: 0 0 42px;
+          width: 42px;
+          height: 42px;
+          border-radius: 12px;
+          background: #eaf2ff;
+          color: var(--rn-event-blue);
+          font-size: 1.7rem;
+          font-weight: 500;
+        }
+
+        .rn-event-create > summary > span:nth-child(2) {
+          display: grid;
+          flex: 1;
+          gap: 0.25rem;
+        }
+
+        .rn-event-create > summary strong {
+          font-size: 0.98rem;
+          font-weight: 800;
+        }
+
+        .rn-event-create > summary small {
+          color: var(--rn-event-muted);
+          font-size: 0.82rem;
+        }
+
+        .rn-event-create-chevron {
+          color: #64748b;
+          font-size: 1.4rem;
+          transition: transform 160ms ease;
+        }
+
+        .rn-event-create[open] .rn-event-create-chevron {
+          transform: rotate(45deg);
+        }
+
+        .rn-event-form {
+          display: grid;
+          gap: 1rem;
+          min-width: 0;
+          padding: 1.25rem;
+          border-top: 1px solid var(--rn-event-border);
+        }
+
+        .rn-event-form label {
+          display: grid;
+          gap: 0.45rem;
+          min-width: 0;
+          color: var(--rn-event-navy);
+          font-size: 0.86rem;
+          font-weight: 750;
+        }
+
+        .rn-event-form input,
+        .rn-event-form textarea,
+        .rn-event-form select {
+          display: block;
+          width: 100%;
+          min-width: 0;
+          min-height: 44px;
+          padding: 0.72rem 0.85rem;
+          border: 1px solid #cbd8e8;
+          border-radius: 10px;
+          background: #fff;
+          color: var(--rn-event-navy);
+          font: inherit;
+          font-size: 0.9rem;
+          transition:
+            border-color 160ms ease,
+            box-shadow 160ms ease;
+        }
+
+        .rn-event-form textarea {
+          resize: vertical;
+          line-height: 1.6;
+        }
+
+        .rn-event-form input::placeholder,
+        .rn-event-form textarea::placeholder {
+          color: #94a3b8;
+        }
+
+        .rn-event-form input:focus,
+        .rn-event-form textarea:focus,
+        .rn-event-form select:focus {
+          outline: none;
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+        }
+
+        .rn-event-form-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1rem;
+        }
+
+        .rn-event-form-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 1rem;
+          padding-top: 0.25rem;
+        }
+
+        .rn-event-form-footer p {
+          margin: 0;
+          color: var(--rn-event-muted);
+          font-size: 0.8rem;
+          line-height: 1.5;
+        }
+
+        .rn-event-edit-form {
+          margin: 1rem 0;
+          padding: 1.15rem;
+          border: 1px solid #dce7f6;
+          border-radius: 13px;
+          background: #f7faff;
+        }
+
+        .rn-event-edit-form h4 {
+          margin: 0;
+          color: var(--rn-event-navy);
+          font-size: 1.05rem;
+          font-weight: 850;
+        }
+
+        .rn-events-toolbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 0.9rem;
+          margin: 1.1rem 0;
+        }
+
+        .rn-events-tabs {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.3rem;
+          max-width: 100%;
+          padding: 0.3rem;
+          border: 1px solid #e2eaf4;
+          border-radius: 12px;
+          background: #f2f6fb;
+        }
+
+        .rn-events-tabs button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          min-height: 38px;
+          padding: 0.55rem 0.85rem;
+          border: 1px solid transparent;
+          border-radius: 9px;
+          background: transparent;
+          color: #64748b;
+          font: inherit;
+          font-size: 0.84rem;
+          font-weight: 750;
+          cursor: pointer;
+          transition:
+            color 160ms ease,
+            background 160ms ease,
+            box-shadow 160ms ease;
+        }
+
+        .rn-events-tabs button span {
+          display: inline-grid;
+          place-items: center;
+          min-width: 21px;
+          height: 21px;
+          padding: 0 0.3rem;
+          border-radius: 6px;
+          background: rgba(148, 163, 184, 0.16);
+          font-size: 0.73rem;
+        }
+
+        .rn-events-tabs button.active {
+          border-color: #d7e4ff;
+          background: #fff;
+          color: #145df1;
+          box-shadow: 0 2px 6px rgba(16, 36, 59, 0.055);
+        }
+
+        .rn-events-tabs button.active span {
+          background: #eaf1ff;
+          color: #145df1;
+        }
+
+        .rn-events-timezone {
+          color: var(--rn-event-muted);
+          font-size: 0.78rem;
+        }
+
+        .rn-event-alert {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.65rem;
+          margin: 0.9rem 0;
+          padding: 0.85rem 1rem;
+          border: 1px solid;
+          border-radius: 11px;
+          overflow-wrap: anywhere;
+          font-size: 0.87rem;
+          line-height: 1.6;
+        }
+
+        .rn-event-alert > span {
+          display: grid;
+          place-items: center;
+          flex: 0 0 21px;
+          width: 21px;
+          height: 21px;
+          border-radius: 50%;
+          font-weight: 900;
+        }
+
+        .rn-event-alert-error {
+          border-color: #fecdd3;
+          background: #fff5f6;
+          color: #9f1239;
+        }
+
+        .rn-event-alert-success {
+          border-color: #bbf7d0;
+          background: #f0fdf4;
+          color: #166534;
+        }
+
+        .rn-events-list {
+          display: grid;
+          gap: 1rem;
+        }
+
+        .rn-event-card {
+          position: relative;
+          display: grid;
+          grid-template-columns: 5px minmax(0, 1fr);
+          min-width: 0;
+          overflow: hidden;
+          border: 1px solid var(--rn-event-border);
+          border-radius: 16px;
+          background: #fff;
+          box-shadow: 0 5px 22px rgba(16, 36, 59, 0.045);
+          transition:
+            border-color 180ms ease,
+            box-shadow 180ms ease,
+            transform 180ms ease;
+          scroll-margin-top: 100px;
+        }
+
+        .rn-event-card:hover {
+          border-color: #c7d8f1;
+          box-shadow: 0 10px 30px rgba(16, 36, 59, 0.075);
+          transform: translateY(-1px);
+        }
+
+        .rn-event-card-accent {
+          background: linear-gradient(
+            180deg,
+            #145df1 0%,
+            #00b4d8 100%
+          );
+        }
+
+        .rn-event-card-cancelled .rn-event-card-accent {
+          background: #e11d48;
+        }
+
+        .rn-event-card-past .rn-event-card-accent {
+          background: #94a3b8;
+        }
+
+        .rn-event-card-content {
+          min-width: 0;
+          padding: clamp(1rem, 2.5vw, 1.4rem);
+        }
+
+        .rn-event-card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 0.7rem;
+        }
+
+        .rn-event-mode {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          color: #526782;
+          font-size: 0.8rem;
+          font-weight: 800;
+        }
+
+        .rn-event-mode-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #0ea66b;
+          box-shadow: 0 0 0 3px rgba(14, 166, 107, 0.11);
+        }
+
+        .rn-event-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.35rem 0.65rem;
+          border: 1px solid transparent;
+          border-radius: 999px;
+          font-size: 0.73rem;
+          font-weight: 850;
+          line-height: 1.3;
+        }
+
+        .rn-event-status.is-scheduled {
+          border-color: #b7efd0;
+          background: #eafbf2;
+          color: #087443;
+        }
+
+        .rn-event-status.is-cancelled {
+          border-color: #fecdd3;
+          background: #fff1f2;
+          color: #be123c;
+        }
+
+        .rn-event-status.is-past {
+          border-color: #e2e8f0;
+          background: #f1f5f9;
+          color: #64748b;
+        }
+
+        .rn-event-title {
+          margin: 0.8rem 0 1rem;
+          color: var(--rn-event-navy);
+          font-size: clamp(1.2rem, 2.4vw, 1.55rem);
+          font-weight: 850;
+          letter-spacing: -0.035em;
+          line-height: 1.3;
+          overflow-wrap: anywhere;
+        }
+
+        .rn-event-details {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.8rem 1.5rem;
+          margin: 0 0 0.85rem;
+        }
+
+        .rn-event-detail {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.6rem;
+          min-width: 0;
+          color: #415873;
+          font-size: 0.85rem;
+          line-height: 1.55;
+        }
+
+        .rn-event-detail > span:last-child,
+        .rn-event-detail > div {
+          min-width: 0;
+          overflow-wrap: anywhere;
+        }
+
+        .rn-event-detail > div {
+          display: grid;
+          gap: 0.2rem;
+        }
+
+        .rn-event-detail strong {
+          color: #233c5a;
+          font-weight: 800;
+        }
+
+        .rn-event-detail > div > span {
+          color: var(--rn-event-muted);
+          font-size: 0.8rem;
+        }
+
+        .rn-event-detail-icon {
+          display: inline-grid;
+          place-items: center;
+          flex: 0 0 30px;
+          width: 30px;
+          height: 30px;
+          border: 1px solid #e2ebfa;
+          border-radius: 9px;
+          background: #f4f8ff;
+          color: #2563eb;
+          font-size: 1.1rem;
+          font-weight: 800;
+        }
+
+        .rn-event-description {
+          margin: 0.8rem 0;
+          color: #526782;
+          font-size: 0.9rem;
+          line-height: 1.75;
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+        }
+
+        .rn-event-meeting-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.4rem;
+          margin-top: 0.3rem;
+          color: #145df1;
+          font-size: 0.85rem;
+          font-weight: 800;
+          text-decoration: none;
+          overflow-wrap: anywhere;
+        }
+
+        .rn-event-meeting-link:hover {
+          color: #0b45bf;
+          text-decoration: underline;
+        }
+
+        .rn-event-attendance {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 0.7rem;
+          margin-top: 1.1rem;
+          padding-top: 1rem;
+          border-top: 1px solid #edf1f7;
+        }
+
+        .rn-event-attendance-count {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          color: #415873;
+          font-size: 0.82rem;
+          font-weight: 800;
+        }
+
+        .rn-event-attendance-count > span {
+          color: #145df1;
+          font-size: 1.05rem;
+        }
+
+        .rn-event-attendee-details {
+          flex: 1 1 100%;
+          min-width: 0;
+          margin-top: 0.25rem;
+          padding-top: 0.8rem;
+          border-top: 1px dashed #dce5f0;
+        }
+
+        .rn-event-attendee-details summary {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          color: #145df1;
+          font-size: 0.83rem;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .rn-event-attendee-details summary:hover {
+          color: #0b45bf;
+        }
+
+        .rn-event-attendee-list {
+          display: grid;
+          gap: 0.45rem;
+          padding: 0;
+          margin: 0.75rem 0;
+          list-style: none;
+        }
+
+        .rn-event-attendee-list li {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 0.75rem;
+          padding: 0.7rem 0.8rem;
+          border: 1px solid #e7edf5;
+          border-radius: 9px;
+          background: #f8faff;
+          font-size: 0.83rem;
+        }
+
+        .rn-event-attendee-list li span {
+          overflow-wrap: anywhere;
+          font-weight: 700;
+        }
+
+        .rn-event-attendee-list time {
+          flex-shrink: 0;
+          color: var(--rn-event-muted);
+          font-size: 0.75rem;
+        }
+
+        .rn-event-muted {
+          color: var(--rn-event-muted);
+          font-size: 0.83rem;
+          line-height: 1.6;
+        }
+
+        .rn-event-card-footer {
+          margin-top: 1.1rem;
+          padding-top: 1rem;
+          border-top: 1px solid #e9eff7;
+        }
+
+        .rn-event-actions {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 0.55rem;
+        }
+
+        .rn-event-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.45rem;
+          min-height: 41px;
+          max-width: 100%;
+          padding: 0.65rem 0.9rem;
+          border: 1px solid transparent;
+          border-radius: 10px;
+          font: inherit;
+          font-size: 0.81rem;
+          font-weight: 800;
+          line-height: 1.35;
+          text-align: center;
+          text-decoration: none;
+          overflow-wrap: anywhere;
+          cursor: pointer;
+          transition:
+            background 160ms ease,
+            border-color 160ms ease,
+            color 160ms ease,
+            box-shadow 160ms ease,
+            transform 160ms ease;
+        }
+
+        .rn-event-button:hover:not(:disabled) {
+          transform: translateY(-1px);
+        }
+
+        .rn-event-button-primary {
+          border-color: #145df1;
+          background: linear-gradient(135deg, #1768ff, #1450d8);
+          color: #fff;
+          box-shadow: 0 3px 9px rgba(20, 93, 241, 0.16);
+        }
+
+        .rn-event-button-primary:hover:not(:disabled) {
+          background: linear-gradient(135deg, #0e58e8, #103eb9);
+          box-shadow: 0 5px 14px rgba(20, 93, 241, 0.23);
+        }
+
+        .rn-event-button-light {
+          border-color: #d8e3f1;
+          background: #fff;
+          color: #334e70;
+        }
+
+        .rn-event-button-light:hover:not(:disabled) {
+          border-color: #aac5f8;
+          background: #f5f8ff;
+          color: #145df1;
+        }
+
+        .rn-event-button-going {
+          border-color: #a7e9c4;
+          background: #edfcf3;
+          color: #087443;
+        }
+
+        .rn-event-button-going:hover:not(:disabled) {
+          border-color: #6fd7a0;
+          background: #d8f8e6;
+        }
+
+        .rn-event-button-danger {
+          border-color: #fecaca;
+          background: #fff;
+          color: #be123c;
+        }
+
+        .rn-event-button-danger:hover:not(:disabled) {
+          border-color: #fda4af;
+          background: #fff1f2;
+        }
+
+        .rn-event-button:focus-visible,
+        .rn-events-refresh:focus-visible,
+        .rn-events-tabs button:focus-visible,
+        .rn-event-create > summary:focus-visible {
+          outline: 3px solid rgba(20, 93, 241, 0.35);
+          outline-offset: 3px;
+        }
+
+        .rn-event-button:disabled {
+          cursor: not-allowed;
+          opacity: 0.58;
+          transform: none;
+          box-shadow: none;
+        }
+
+        .rn-event-rsvp-confirmed {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          color: #087443;
+          font-size: 0.79rem;
+          font-weight: 800;
+        }
+
+        .rn-events-empty {
+          display: grid;
+          justify-items: center;
+          padding: clamp(2rem, 6vw, 3.5rem) 1.25rem;
+          border: 1px dashed #cbd8e8;
+          border-radius: 16px;
+          background:
+            radial-gradient(
+              circle at 50% 0%,
+              rgba(20, 93, 241, 0.06),
+              transparent 65%
+            ),
+            #fbfdff;
+          text-align: center;
+        }
+
+        .rn-events-empty-icon {
+          display: grid;
+          place-items: center;
+          width: 58px;
+          height: 58px;
+          margin-bottom: 1rem;
+          border: 1px solid #dbe7ff;
+          border-radius: 17px;
+          background: #edf4ff;
+          color: #145df1;
+          font-size: 2rem;
+        }
+
+        .rn-events-empty h3 {
+          margin: 0;
+          color: var(--rn-event-navy);
+          font-size: 1.12rem;
+          font-weight: 850;
+        }
+
+        .rn-events-empty p {
+          max-width: 420px;
+          margin: 0.55rem 0 1rem;
+          color: var(--rn-event-muted);
+          font-size: 0.87rem;
+          line-height: 1.7;
+        }
+
+        @media (min-width: 1000px) {
+          .rn-event-actions {
+            gap: 0.65rem;
+          }
+        }
+
         @media (max-width: 700px) {
-          .rn-community-event-form-grid,
-          .rn-community-event-grid {
+          .rn-events-intro {
+            padding: 1.1rem;
+            border-radius: 14px;
+          }
+
+          .rn-events-summary {
+            width: 100%;
+            gap: 0.85rem;
+          }
+
+          .rn-events-stat {
+            flex: 1;
+            min-width: 0;
+          }
+
+          .rn-events-refresh {
+            margin-left: auto;
+          }
+
+          .rn-event-form-grid {
             grid-template-columns: minmax(0, 1fr);
           }
 
-          .rn-community-event-form-footer {
+          .rn-events-toolbar {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .rn-events-tabs {
+            width: 100%;
+          }
+
+          .rn-events-tabs button {
+            flex: 1;
+            padding-inline: 0.5rem;
+          }
+
+          .rn-events-timezone {
+            padding-left: 0.15rem;
+          }
+
+          .rn-event-card {
+            grid-template-columns: 4px minmax(0, 1fr);
+            border-radius: 13px;
+          }
+
+          .rn-event-card-content {
+            padding: 1rem;
+          }
+
+          .rn-event-actions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            width: 100%;
+          }
+
+          .rn-event-actions > * {
+            min-width: 0;
+          }
+
+          .rn-event-button {
+            width: 100%;
+            padding: 0.65rem 0.5rem;
+            font-size: 0.77rem;
+          }
+
+          .rn-event-rsvp-confirmed {
+            grid-column: 1 / -1;
+            padding: 0.3rem 0;
+          }
+
+          .rn-event-form-footer {
             align-items: stretch;
             flex-direction: column;
           }
 
-          .rn-community-events-heading-actions {
+          .rn-event-form-footer > .rn-event-button,
+          .rn-event-form-footer .rn-event-actions {
             width: 100%;
           }
 
-          .rn-community-event-attendee-list li {
+          .rn-event-attendee-list li {
             flex-direction: column;
-            gap: 0.25rem;
+            gap: 0.3rem;
+          }
+        }
+
+        @media (max-width: 390px) {
+          .rn-events-summary {
+            gap: 0.55rem;
+          }
+
+          .rn-events-stat-number {
+            font-size: 1.3rem;
+          }
+
+          .rn-events-refresh {
+            padding-inline: 0.6rem;
+            font-size: 0.77rem;
+          }
+
+          .rn-event-card-header {
+            align-items: flex-start;
+          }
+
+          .rn-event-actions {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .rn-event-rsvp-confirmed {
+            grid-column: auto;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .rn-community-events *,
+          .rn-community-events *::before,
+          .rn-community-events *::after {
+            scroll-behavior: auto !important;
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
           }
         }
       `}</style>
