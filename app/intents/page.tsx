@@ -1,3 +1,4 @@
+import "./intents-page.css";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -42,12 +43,11 @@ export default async function IntentsPage() {
     redirect("/login?next=/intents");
   }
 
-  const { data: memberships, error: membershipError } =
-    await supabase
-      .from("community_members")
-      .select("community_id")
-      .eq("user_id", user.id)
-      .eq("status", "active");
+  const { data: memberships, error: membershipError } = await supabase
+    .from("community_members")
+    .select("community_id")
+    .eq("user_id", user.id)
+    .eq("status", "active");
 
   if (membershipError) {
     console.error(
@@ -56,19 +56,13 @@ export default async function IntentsPage() {
     );
 
     return (
-      <main className="page-shell">
+      <main className="page-shell intents-page">
         <section className="section">
           <h1>Discover opportunities</h1>
-
           <p className="muted">
-            Your community memberships could not be loaded.
-            Please try again.
+            Your community memberships could not be loaded. Please try again.
           </p>
-
-          <Link
-            className="button button-primary"
-            href="/home"
-          >
+          <Link className="button button-primary" href="/home">
             Return home
           </Link>
         </section>
@@ -77,9 +71,7 @@ export default async function IntentsPage() {
   }
 
   const communityIds = [
-    ...new Set(
-      (memberships ?? []).map((item) => item.community_id)
-    ),
+    ...new Set((memberships ?? []).map((item) => item.community_id)),
   ];
 
   let intents: Intent[] = [];
@@ -96,7 +88,6 @@ export default async function IntentsPage() {
         .in("status", ["open", "in_progress"])
         .order("created_at", { ascending: false })
         .limit(100),
-
       supabase
         .from("communities")
         .select("id, name, slug")
@@ -111,18 +102,13 @@ export default async function IntentsPage() {
       );
 
       return (
-        <main className="page-shell">
+        <main className="page-shell intents-page">
           <section className="section">
             <h1>Discover opportunities</h1>
-
             <p className="muted">
               Opportunities could not be loaded. Please try again.
             </p>
-
-            <Link
-              className="button button-primary"
-              href="/home"
-            >
+            <Link className="button button-primary" href="/home">
               Return home
             </Link>
           </section>
@@ -135,10 +121,7 @@ export default async function IntentsPage() {
   }
 
   const communityMap = new Map(
-    communities.map((community) => [
-      community.id,
-      community,
-    ])
+    communities.map((community) => [community.id, community])
   );
 
   const formatDate = (value: string) => {
@@ -156,65 +139,39 @@ export default async function IntentsPage() {
   };
 
   return (
-    <main className="page-shell">
-      {/* Hero */}
+    <main className="page-shell intents-page">
       <section className="hero">
         <div className="hero-content">
-          <span className="eyebrow">
-            RUFFNECK CONNECT
-          </span>
-
+          <span className="eyebrow">RUFFNECK CONNECT</span>
           <h1>Turn intentions into action.</h1>
-
           <p>
-            Discover what people need, what they can offer,
-            and what you can build together.
+            Discover what people need, what they can offer, and what you can
+            build together.
           </p>
-
           <div className="hero-actions">
-            <Link
-              className="button button-primary"
-              href="/intents/new?type=need"
-            >
+            <Link className="button button-primary" href="/intents/new?type=need">
               Post a need
             </Link>
-
-            <Link
-              className="button button-secondary"
-              href="/intents/new?type=offer"
-            >
+            <Link className="button button-secondary" href="/intents/new?type=offer">
               Share an offer
             </Link>
-
-            <Link
-              className="button button-secondary"
-              href="/intents/new?type=build"
-            >
+            <Link className="button button-secondary" href="/intents/new?type=build">
               Start building
             </Link>
           </div>
         </div>
       </section>
 
-      {/* Open intentions */}
       <section className="section">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">
-              COMMUNITY DISCOVERY
-            </span>
-
+            <span className="eyebrow">COMMUNITY DISCOVERY</span>
             <h2>Open intentions</h2>
-
             <p className="muted">
               Opportunities shared in your active communities.
             </p>
           </div>
-
-          <Link
-            className="button button-secondary"
-            href="/communities"
-          >
+          <Link className="button button-secondary" href="/communities">
             Explore communities
           </Link>
         </div>
@@ -222,45 +179,33 @@ export default async function IntentsPage() {
         {intents.length === 0 ? (
           <div className="empty-state">
             <h3>Nothing to discover yet</h3>
-
             <p>
-              Join a community or publish an intention to start
-              creating opportunities.
+              Join a community or publish an intention to start creating
+              opportunities.
             </p>
-
-            <Link
-              className="button button-primary"
-              href="/communities"
-            >
+            <Link className="button button-primary" href="/communities">
               Find a community
             </Link>
           </div>
         ) : (
           <div className="grid-3">
             {intents.map((intent) => {
-              const community = communityMap.get(
-                intent.community_id
-              );
+              const community = communityMap.get(intent.community_id);
 
               return (
-                <article
-                  className="feature-card"
-                  key={intent.id}
-                >
+                <article className="feature-card" key={intent.id}>
                   <div className="card-topline">
                     <span
                       className={`intent-badge intent-${intent.intent_type}`}
                     >
                       {intentLabels[intent.intent_type]}
                     </span>
-
                     <span className="muted">
                       {formatDate(intent.created_at)}
                     </span>
                   </div>
 
                   <h3>{intent.title}</h3>
-
                   <p className="intent-description">
                     {intent.description.length > 220
                       ? `${intent.description.slice(0, 220).trim()}…`
@@ -268,21 +213,14 @@ export default async function IntentsPage() {
                   </p>
 
                   <div className="intent-meta">
-                    {intent.category && (
-                      <span>{intent.category}</span>
-                    )}
-
-                    {intent.location_label && (
-                      <span>{intent.location_label}</span>
-                    )}
+                    {intent.category && <span>{intent.category}</span>}
+                    {intent.location_label && <span>{intent.location_label}</span>}
                   </div>
 
                   {community && (
                     <p className="muted">
                       Community:{" "}
-                      <Link
-                        href={`/communities/${community.slug}`}
-                      >
+                      <Link href={`/communities/${community.slug}`}>
                         {community.name}
                       </Link>
                     </p>

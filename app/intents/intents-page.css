@@ -1,0 +1,479 @@
+/* RuffNeck Connect — polished Intents page only.
+   Imported by app/intents/page.tsx and scoped to .intents-page so it does not
+   change community, profile, messaging, or notifications styling. */
+
+main.page-shell.intents-page {
+  min-height: calc(100vh - 76px);
+  padding: clamp(20px, 3vw, 36px) clamp(14px, 3vw, 32px) clamp(44px, 6vw, 76px);
+  background:
+    radial-gradient(ellipse at 8% 0%, rgba(0, 180, 216, 0.065), transparent 34%),
+    #f4f7fb;
+}
+
+main.page-shell.intents-page > section.hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  width: min(100%, 1220px);
+  min-height: clamp(300px, 35vw, 430px);
+  margin: 0 auto clamp(28px, 4vw, 48px);
+  padding: clamp(36px, 6vw, 76px) clamp(22px, 6vw, 74px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 28px;
+  background: linear-gradient(128deg, #0b1e3a 0%, #10345a 58%, #10526a 100%);
+  color: #fff;
+  box-shadow: 0 22px 54px rgba(11, 30, 58, 0.16);
+}
+
+main.page-shell.intents-page > section.hero::before,
+main.page-shell.intents-page > section.hero::after {
+  position: absolute;
+  z-index: 0;
+  display: block;
+  content: "";
+  pointer-events: none;
+  border-radius: 50%;
+}
+
+main.page-shell.intents-page > section.hero::before {
+  top: -190px;
+  right: -115px;
+  width: clamp(310px, 43vw, 560px);
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(0, 180, 216, 0.3), rgba(0, 180, 216, 0) 68%);
+}
+
+main.page-shell.intents-page > section.hero::after {
+  right: 18%;
+  bottom: -255px;
+  width: 410px;
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.12), rgba(251, 191, 36, 0) 70%);
+}
+
+main.page-shell.intents-page > section.hero > .hero-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 820px;
+  min-width: 0;
+  margin: 0;
+  overflow: visible;
+}
+
+main.page-shell.intents-page > section.hero .hero-content > .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0 0 22px;
+  padding: 8px 12px;
+  overflow: visible;
+  border: 1px solid rgba(251, 191, 36, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffd76b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: 0.13em;
+  text-indent: 0;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+main.page-shell.intents-page > section.hero .hero-content > h1 {
+  max-width: 14ch;
+  margin: 0 0 20px;
+  color: #fff;
+  font-family: "Manrope", sans-serif;
+  font-size: clamp(2.35rem, 5.3vw, 4.4rem);
+  font-weight: 800;
+  line-height: 1.06;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+}
+
+main.page-shell.intents-page > section.hero .hero-content > p {
+  max-width: 62ch;
+  margin: 0;
+  color: #d9e7f4;
+  font-size: clamp(1rem, 1.35vw, 1.15rem);
+  line-height: 1.8;
+}
+
+main.page-shell.intents-page > section.hero .hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+main.page-shell.intents-page > section.hero .hero-actions > a.button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 48px;
+  padding: 12px 19px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  white-space: normal;
+  overflow-wrap: break-word;
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+main.page-shell.intents-page > section.hero .hero-actions > a.button-primary {
+  border-color: #00b4d8;
+  background: #00b4d8;
+  color: #08223d;
+  box-shadow: 0 7px 18px rgba(0, 180, 216, 0.2);
+}
+
+main.page-shell.intents-page > section.hero .hero-actions > a.button-primary:hover {
+  background: #32c7e4;
+  box-shadow: 0 9px 22px rgba(0, 180, 216, 0.28);
+  transform: translateY(-2px);
+}
+
+main.page-shell.intents-page > section.hero .hero-actions > a.button-secondary {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+main.page-shell.intents-page > section.hero .hero-actions > a.button-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.48);
+  background: rgba(255, 255, 255, 0.13);
+  transform: translateY(-2px);
+}
+
+main.page-shell.intents-page > section.section {
+  width: min(100%, 1220px);
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+main.page-shell.intents-page > section.section > .section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 22px;
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+main.page-shell.intents-page .section-heading > div {
+  min-width: 0;
+}
+
+main.page-shell.intents-page .section-heading .eyebrow {
+  display: inline-block;
+  margin: 0 0 8px;
+  color: #087b95;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  line-height: 1.4;
+}
+
+main.page-shell.intents-page .section-heading h2 {
+  margin: 0 0 8px;
+  color: #0b1e3a;
+  font-size: clamp(1.55rem, 3vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+}
+
+main.page-shell.intents-page .section-heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+main.page-shell.intents-page .section-heading > a.button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  border-radius: 11px;
+}
+
+main.page-shell.intents-page .grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 20px;
+}
+
+main.page-shell.intents-page .feature-card {
+  display: flex;
+  min-width: 0;
+  min-height: 300px;
+  flex-direction: column;
+  padding: clamp(19px, 2.2vw, 26px);
+  border: 1px solid #e0e8f1;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 5px 20px rgba(11, 30, 58, 0.045);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+main.page-shell.intents-page .feature-card:hover {
+  border-color: #c8e7ef;
+  box-shadow: 0 12px 28px rgba(11, 30, 58, 0.075);
+  transform: translateY(-2px);
+}
+
+main.page-shell.intents-page .card-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  margin-bottom: 18px;
+}
+
+main.page-shell.intents-page .intent-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #e7f7fb;
+  color: #086d83;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+  text-transform: capitalize;
+}
+
+main.page-shell.intents-page .intent-badge.intent-offer {
+  background: #e8f8ef;
+  color: #176849;
+}
+
+main.page-shell.intents-page .intent-badge.intent-build {
+  background: #fff5dc;
+  color: #835b00;
+}
+
+main.page-shell.intents-page .card-topline > .muted {
+  color: #718096;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+main.page-shell.intents-page .feature-card > h3 {
+  margin: 0 0 10px;
+  color: #102846;
+  font-size: 1.1rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+main.page-shell.intents-page .feature-card > p.intent-description {
+  display: -webkit-box;
+  margin: 0 0 18px;
+  overflow: hidden;
+  color: #55677d;
+  font-size: 14px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+main.page-shell.intents-page .feature-card .intent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 0 16px;
+}
+
+main.page-shell.intents-page .feature-card .intent-meta > span {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid #e6edf4;
+  border-radius: 8px;
+  background: #f7f9fc;
+  color: #52647a;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+main.page-shell.intents-page .feature-card > p.muted {
+  margin: 0 0 16px;
+  color: #65768b;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+main.page-shell.intents-page .feature-card > p.muted a {
+  color: #087b95;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+main.page-shell.intents-page .feature-card > p.muted a:hover {
+  text-decoration: underline;
+}
+
+main.page-shell.intents-page .feature-card > .intent-card-action {
+  align-self: flex-start;
+  margin-top: auto;
+  min-height: 42px;
+  padding: 10px 15px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+main.page-shell.intents-page .empty-state {
+  margin: 0;
+  padding: clamp(32px, 5vw, 52px) 22px;
+  border: 1px dashed #cbd8e6;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 5px 20px rgba(11, 30, 58, 0.035);
+  text-align: center;
+}
+
+/* The global notification-page styles add a decorative check to every
+   .empty-state. Turn that off on this page so the empty message stays clean. */
+main.page-shell.intents-page .empty-state::before {
+  display: none;
+  content: none;
+}
+
+main.page-shell.intents-page .empty-state h3 {
+  margin: 0 0 10px;
+  color: #102846;
+  font-size: 1.25rem;
+}
+
+main.page-shell.intents-page .empty-state p {
+  max-width: 52ch;
+  margin: 0 auto 20px;
+  color: #64748b;
+  line-height: 1.75;
+}
+
+main.page-shell.intents-page .button:focus-visible,
+main.page-shell.intents-page a:focus-visible {
+  outline: 3px solid rgba(0, 180, 216, 0.42);
+  outline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  main.page-shell.intents-page > section.hero {
+    min-height: 320px;
+    border-radius: 23px;
+  }
+
+  main.page-shell.intents-page .grid-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  main.page-shell.intents-page {
+    padding: 16px 13px 44px;
+  }
+
+  main.page-shell.intents-page > section.hero {
+    min-height: 0;
+    margin-bottom: 32px;
+    padding: 34px 22px 32px;
+    border-radius: 19px;
+  }
+
+  main.page-shell.intents-page > section.hero .hero-content > .eyebrow {
+    margin-bottom: 18px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
+
+  main.page-shell.intents-page > section.hero .hero-content > h1 {
+    max-width: 12ch;
+    margin-bottom: 15px;
+    font-size: clamp(2.15rem, 10vw, 3.15rem);
+    line-height: 1.08;
+    letter-spacing: -0.04em;
+  }
+
+  main.page-shell.intents-page > section.hero .hero-content > p {
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  main.page-shell.intents-page > section.hero .hero-actions {
+    align-items: stretch;
+    gap: 9px;
+    margin-top: 23px;
+  }
+
+  main.page-shell.intents-page > section.hero .hero-actions > a.button {
+    flex: 1 1 145px;
+    min-height: 46px;
+    padding: 11px 13px;
+    font-size: 13px;
+  }
+
+  main.page-shell.intents-page > section.section > .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  main.page-shell.intents-page .section-heading > a.button {
+    width: 100%;
+  }
+
+  main.page-shell.intents-page .grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 13px;
+  }
+
+  main.page-shell.intents-page .feature-card {
+    min-height: 0;
+    padding: 19px;
+    border-radius: 15px;
+  }
+
+  main.page-shell.intents-page .feature-card > .intent-card-action {
+    align-self: stretch;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main.page-shell.intents-page .feature-card,
+  main.page-shell.intents-page > section.hero .hero-actions > a.button {
+    transition: none;
+  }
+
+  main.page-shell.intents-page .feature-card:hover,
+  main.page-shell.intents-page > section.hero .hero-actions > a.button:hover {
+    transform: none;
+  }
+}
