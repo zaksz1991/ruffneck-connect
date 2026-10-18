@@ -16,6 +16,9 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   "interest_approved",
   "interest_declined",
   "new_message",
+  "connection_request_received",
+  "connection_request_accepted",
+  "connection_request_declined",
 ]);
 
 function sanitizeNotificationLink(link: string | null): string | null {
@@ -35,7 +38,7 @@ function sanitizeNotificationLink(link: string | null): string | null {
     }
 
     const allowedPath =
-      /^\/(home|communities(?:\/[a-zA-Z0-9_-]+)?|intents(?:\/[a-f0-9-]+)?|messages(?:\/[a-f0-9-]+)?|notifications)(?:\/)?$/i;
+      /^\/(home|communities(?:\/[a-zA-Z0-9_-]+)?|intents(?:\/[a-f0-9-]+)?|messages(?:\/[a-f0-9-]+)?|connections|notifications)(?:\/)?$/i;
 
     if (!allowedPath.test(parsed.pathname)) {
       return null;

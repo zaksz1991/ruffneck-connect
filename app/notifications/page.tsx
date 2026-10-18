@@ -26,7 +26,7 @@ type UpdateResponse = {
   error?: string;
 };
 
-type Filter = "all" | "unread" | "community" | "interests" | "messages";
+type Filter = "all" | "unread" | "community" | "interests" | "connections" | "messages";
 
 const NOTIFICATION_LABELS: Record<string, string> = {
   community_join_approved: "Community request approved",
@@ -37,6 +37,9 @@ const NOTIFICATION_LABELS: Record<string, string> = {
   interest_approved: "Interest approved",
   interest_declined: "Interest declined",
   new_message: "New message",
+  connection_request_received: "New connection request",
+  connection_request_accepted: "Connection request accepted",
+  connection_request_declined: "Connection request declined",
   unknown: "Other notification",
 };
 
@@ -57,7 +60,7 @@ function isSafeInternalLink(link: string | null): link is string {
 
     if (url.origin !== baseUrl) return false;
 
-    return /^\/(?:home|communities(?:\/[a-zA-Z0-9_-]+)?|intents(?:\/[a-f0-9-]+)?|messages(?:\/[a-f0-9-]+)?|notifications)\/?$/i.test(
+    return /^\/(?:home|communities(?:\/[a-zA-Z0-9_-]+)?|intents(?:\/[a-f0-9-]+)?|messages(?:\/[a-f0-9-]+)?|connections|notifications)\/?$/i.test(
       url.pathname
     );
   } catch {
@@ -82,6 +85,7 @@ function formatType(value: string): string {
 function notificationCategory(value: string): Exclude<Filter, "all" | "unread"> {
   if (value.startsWith("community_")) return "community";
   if (value.startsWith("interest_")) return "interests";
+  if (value.startsWith("connection_")) return "connections";
   return "messages";
 }
 
@@ -313,6 +317,7 @@ export default function NotificationsPage() {
       unread: notifications.filter((item) => !item.is_read).length,
       community: 0,
       interests: 0,
+      connections: 0,
       messages: 0,
     };
 
@@ -338,6 +343,7 @@ export default function NotificationsPage() {
     { value: "unread", label: "Unread" },
     { value: "community", label: "Community" },
     { value: "interests", label: "Interests" },
+    { value: "connections", label: "Connections" },
     { value: "messages", label: "Messages" },
   ];
 
@@ -349,7 +355,7 @@ export default function NotificationsPage() {
             <p className="eyebrow">RUFFNECK CONNECT</p>
             <h1>Notifications</h1>
             <p className="muted">
-              Updates about your communities, interests, and conversations.
+              Updates about your communities, interests, connections, and conversations.
             </p>
           </div>
           <span className="status-badge" aria-live="polite">
