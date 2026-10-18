@@ -14,9 +14,7 @@ type Member = {
 };
 
 type PageProps = {
-  searchParams: Promise<{
-    q?: string;
-  }>;
+  searchParams: Promise<{ q?: string }>;
 };
 
 function getInitials(name: string): string {
@@ -47,9 +45,7 @@ function getAvatarUrl(value: string | null): string {
         url.searchParams.get("id");
 
       return fileId
-        ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(
-            fileId
-          )}&sz=w300`
+        ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w300`
         : "";
     }
 
@@ -206,9 +202,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           <section className="rn-members-directory">
             <div className="rn-members-section-heading">
               <div>
-                <p className="rn-members-section-kicker">
-                  YOUR COMMUNITY
-                </p>
+                <p className="rn-members-section-kicker">YOUR COMMUNITY</p>
                 <h2>Meet the members</h2>
                 <p>
                   Explore profiles and find people worth connecting with.
@@ -220,9 +214,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
                 <span>
                   {error
                     ? "Directory unavailable"
-                    : `${members.length}${
-                        members.length === 100 ? "+" : ""
-                      } ${
+                    : `${members.length}${members.length === 100 ? "+" : ""} ${
                         members.length === 1 ? "member" : "members"
                       } shown`}
                 </span>
@@ -267,10 +259,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
                   </button>
 
                   {search && (
-                    <Link
-                      href="/members"
-                      className="rn-members-clear"
-                    >
+                    <Link href="/members" className="rn-members-clear">
                       Clear search
                     </Link>
                   )}
@@ -463,10 +452,10 @@ export default async function MembersPage({ searchParams }: PageProps) {
 
           <section className="rn-members-network-banner">
             <div className="rn-members-banner-copy">
-              <p className="rn-members-banner-kicker">
-                BEYOND THE DIRECTORY
-              </p>
-              <h2>Your next opportunity could start with a conversation.</h2>
+              <p className="rn-members-banner-kicker">BEYOND THE DIRECTORY</p>
+              <h2>
+                Your next opportunity could start with a conversation.
+              </h2>
               <p>
                 Explore communities, discover shared goals, and find
                 practical ways to contribute.
@@ -481,10 +470,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
                 Explore communities <span aria-hidden="true">↗</span>
               </Link>
 
-              <Link
-                href="/intents"
-                className="rn-members-banner-link"
-              >
+              <Link href="/intents" className="rn-members-banner-link">
                 Discover opportunities <span aria-hidden="true">→</span>
               </Link>
             </div>
@@ -497,13 +483,8 @@ export default async function MembersPage({ searchParams }: PageProps) {
             </div>
 
             <div className="rn-members-shortcut-grid">
-              <Link
-                href="/communities"
-                className="rn-members-shortcut"
-              >
-                <span className="rn-shortcut-icon rn-shortcut-cyan">
-                  C
-                </span>
+              <Link href="/communities" className="rn-members-shortcut">
+                <span className="rn-shortcut-icon rn-shortcut-cyan">C</span>
                 <span className="rn-shortcut-copy">
                   <strong>Communities</strong>
                   <small>Join groups around shared interests.</small>
@@ -512,9 +493,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
               </Link>
 
               <Link href="/intents" className="rn-members-shortcut">
-                <span className="rn-shortcut-icon rn-shortcut-gold">
-                  O
-                </span>
+                <span className="rn-shortcut-icon rn-shortcut-gold">O</span>
                 <span className="rn-shortcut-copy">
                   <strong>Opportunities</strong>
                   <small>Explore needs, offers, and projects.</small>
@@ -523,9 +502,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
               </Link>
 
               <Link href="/messages" className="rn-members-shortcut">
-                <span className="rn-shortcut-icon rn-shortcut-purple">
-                  M
-                </span>
+                <span className="rn-shortcut-icon rn-shortcut-purple">M</span>
                 <span className="rn-shortcut-copy">
                   <strong>Messages</strong>
                   <small>Continue your conversations.</small>
@@ -537,7 +514,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
         </div>
       </main>
 
-      <style jsx global>{`
+      <style>{`
         .rn-members-page {
           --rn-navy: #0b1e3a;
           --rn-cyan: #00b4d8;
@@ -572,11 +549,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           overflow: hidden;
           border-radius: 27px;
           background:
-            radial-gradient(
-              circle at 82% 15%,
-              rgba(0, 180, 216, 0.2),
-              transparent 34%
-            ),
+            radial-gradient(circle at 82% 15%, rgba(0, 180, 216, 0.2), transparent 34%),
             linear-gradient(125deg, #0b1e3a, #123657);
           box-shadow: 0 20px 55px rgba(11, 30, 58, 0.12);
           color: #fff;
@@ -646,10 +619,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           font-size: 11px;
           font-weight: 800;
           text-decoration: none !important;
-          transition:
-            transform 180ms ease,
-            background 180ms ease,
-            box-shadow 180ms ease;
+          transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
         }
 
         .rn-members-button:hover {
@@ -728,11 +698,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           height: 170px;
           border: 1px solid rgba(255, 255, 255, 0.16);
           border-radius: 50%;
-          background: linear-gradient(
-            145deg,
-            rgba(0, 180, 216, 0.17),
-            rgba(255, 255, 255, 0.035)
-          );
+          background: linear-gradient(145deg, rgba(0, 180, 216, 0.17), rgba(255, 255, 255, 0.035));
           box-shadow: 0 0 55px rgba(0, 180, 216, 0.1);
           backdrop-filter: blur(10px);
         }
@@ -943,13 +909,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           padding: 23px;
           border: 1px solid var(--rn-border);
           border-radius: 18px;
-          background:
-            radial-gradient(
-              circle at 100% 0,
-              rgba(0, 180, 216, 0.055),
-              transparent 32%
-            ),
-            #fff;
+          background: radial-gradient(circle at 100% 0, rgba(0, 180, 216, 0.055), transparent 32%), #fff;
           box-shadow: 0 7px 25px rgba(18, 43, 72, 0.035);
         }
 
@@ -1017,9 +977,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           color: var(--rn-navy);
           font: inherit;
           font-size: 12px;
-          transition:
-            border-color 180ms ease,
-            box-shadow 180ms ease;
+          transition: border-color 180ms ease, box-shadow 180ms ease;
         }
 
         .rn-members-search-input-wrap input::placeholder {
@@ -1107,10 +1065,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           border-radius: 17px;
           background: #fff;
           box-shadow: 0 5px 22px rgba(18, 43, 72, 0.025);
-          transition:
-            transform 180ms ease,
-            border-color 180ms ease,
-            box-shadow 180ms ease;
+          transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
         }
 
         .rn-member-card:hover {
@@ -1256,10 +1211,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           font-size: 10px;
           font-weight: 800;
           text-decoration: none !important;
-          transition:
-            background 180ms ease,
-            color 180ms ease,
-            border-color 180ms ease;
+          transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
         }
 
         .rn-member-profile-button {
@@ -1320,13 +1272,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           padding: 45px 24px;
           border: 1px dashed #cfdae5;
           border-radius: 18px;
-          background:
-            radial-gradient(
-              circle at 50% 0,
-              rgba(0, 180, 216, 0.055),
-              transparent 60%
-            ),
-            #fbfdff;
+          background: radial-gradient(circle at 50% 0, rgba(0, 180, 216, 0.055), transparent 60%), #fbfdff;
           text-align: center;
         }
 
@@ -1370,13 +1316,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           margin-top: 52px;
           padding: clamp(25px, 4vw, 38px);
           border-radius: 20px;
-          background:
-            radial-gradient(
-              circle at 90% 20%,
-              rgba(0, 180, 216, 0.16),
-              transparent 36%
-            ),
-            var(--rn-navy);
+          background: radial-gradient(circle at 90% 20%, rgba(0, 180, 216, 0.16), transparent 36%), var(--rn-navy);
           color: #fff;
         }
 
@@ -1456,10 +1396,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           border-radius: 14px;
           background: #fff;
           text-decoration: none !important;
-          transition:
-            transform 180ms ease,
-            border-color 180ms ease,
-            box-shadow 180ms ease;
+          transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
         }
 
         .rn-members-shortcut:hover {
@@ -1523,7 +1460,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
 
         @media (max-width: 1000px) {
           .rn-members-hero {
-            grid-template-columns: 1fr 0.8fr;
+            grid-template-columns: 1.15fr 0.85fr;
             padding: 32px;
           }
 
