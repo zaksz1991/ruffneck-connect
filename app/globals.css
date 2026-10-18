@@ -2164,3 +2164,55 @@ button:disabled {
     text-align: center;
   }
 }
+
+/* Add these rules to app/globals.css. The existing member/profile styling is preserved. */
+.rn-member-number {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 10px 0 4px;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 180, 216, 0.35);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(0, 180, 216, 0.10), rgba(11, 30, 58, 0.04));
+  color: #0b1e3a;
+  line-height: 1.2;
+}
+
+.rn-member-number-label {
+  color: #52647b;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+}
+
+.rn-member-number strong {
+  color: #0b1e3a;
+  font-size: 0.94rem;
+  letter-spacing: 0.035em;
+  overflow-wrap: anywhere;
+}
+
+.rn-member-number-compact {
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 9px;
+}
+
+.rn-member-number-compact .rn-member-number-label {
+  font-size: 0.62rem;
+}
+
+.rn-member-number-compact strong {
+  font-size: 0.82rem;
+}
+
+@media (max-width: 520px) {
+  .rn-member-number {
+    gap: 6px;
+    border-radius: 12px;
+  }
+}
