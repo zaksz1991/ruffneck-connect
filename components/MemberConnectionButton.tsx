@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-type ConnectionStatus = "pending" | "accepted" | "declined" | "cancelled";
+type ConnectionStatus = "pending" | "accepted" | "declined" | "cancelled" | "removed";
 type ConnectionDirection = "incoming" | "outgoing" | "connected";
 
 type ConnectionRecord = {
@@ -161,6 +161,35 @@ export default function MemberConnectionButton({
     setWorking(false);
   }
 
+  async function removeConnection() {
+    if (!connection || connection.status !== "accepted") return;
+
+    const confirmed = window.confirm(
+      "Remove this connection? The relationship will be removed from both connection lists. Existing message history will not be deleted."
+    );
+    if (!confirmed) return;
+
+    setWorking(true);
+    setError("");
+    setMessage("");
+    const supabase = createClient();
+    const { error: removeError } = await supabase.rpc(
+      "remove_member_connection",
+      { p_connection_id: connection.connection_id }
+    );
+
+    if (removeError) {
+      console.error("Could not remove connection:", removeError.message);
+      setError("The connection could not be removed. Refresh and try again.");
+    } else {
+      setConnection({ ...connection, status: "removed", direction: connection.direction === "connected" ? "connected" : connection.direction });
+      setMessage("Connection removed. You can send a new request later.");
+      await loadStatus();
+      router.refresh();
+    }
+    setWorking(false);
+  }
+
   async function openConversation() {
     setWorking(true);
     setError("");
@@ -196,6 +225,9 @@ export default function MemberConnectionButton({
           <button className="button button-primary" type="button" onClick={openConversation} disabled={working}>
             {working ? "Opening chat…" : "Message"}
           </button>
+          <button className="button button-secondary" type="button" onClick={removeConnection} disabled={working}>
+            {working ? "Removing…" : "Remove connection"}
+          </button>
         </>
       ) : incomingPending ? (
         <>
@@ -221,7 +253,7 @@ export default function MemberConnectionButton({
         </>
       ) : (
         <button className="button button-primary" type="button" onClick={requestConnection} disabled={working}>
-          {working ? "Sending…" : connection?.status === "declined" || connection?.status === "cancelled" ? "Connect again" : "Connect"}
+          {working ? "Sending…" : connection?.status === "declined" || connection?.status === "cancelled" || connection?.status === "removed" ? "Connect again" : "Connect"}
         </button>
       )}
 
