@@ -86,6 +86,7 @@ const errorMessages: Record<string, string> = {
   locale: "Your preferred language must not exceed 80 characters.",
   avatar: "Enter a valid photo URL beginning with HTTP or HTTPS.",
   privacy: "Choose a valid member directory privacy setting.",
+  missing: "Your profile record could not be found. Please contact support.",
   save: "Your profile could not be saved. Please try again.",
 };
 
@@ -124,7 +125,12 @@ export default async function ProfilePage({ searchParams }: PageProps) {
     ]);
 
   if (profileResult.error) {
-    console.error("Profile load failed:", profileResult.error.message);
+    console.error("Profile load failed:", {
+      code: profileResult.error.code,
+      message: profileResult.error.message,
+      details: profileResult.error.details,
+      hint: profileResult.error.hint,
+    });
   }
 
   const profile = (profileResult.data ?? null) as Profile | null;
@@ -157,9 +163,10 @@ export default async function ProfilePage({ searchParams }: PageProps) {
 
     const {
       data: { user },
+      error: userError,
     } = await supabase.auth.getUser();
 
-    if (!user) {
+    if (userError || !user) {
       redirect("/login?next=/profile");
     }
 
@@ -199,22 +206,61 @@ export default async function ProfilePage({ searchParams }: PageProps) {
 
     const show_in_directory = directoryValue === "true";
 
-    const { error } = await supabase.from("profiles").upsert(
-      {
-        id: user.id,
+    // Update the existing profile without changing its role or member number.
+    const { data: existingProfile, error: lookupError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.error("Profile lookup failed:", {
+        code: lookupError.code,
+        message: lookupError.message,
+        details: lookupError.details,
+        hint: lookupError.hint,
+        userId: user.id,
+      });
+
+      redirect("/profile?error=save");
+    }
+
+    if (!existingProfile) {
+      console.error("Profile save failed: no profile row exists for user", {
+        userId: user.id,
+        email: user.email,
+      });
+
+      redirect("/profile?error=missing");
+    }
+
+    const { data: updatedProfile, error: updateError } = await supabase
+      .from("profiles")
+      .update({
         email: user.email ?? null,
         full_name,
         bio: bio || null,
         avatar_url: avatar_url || null,
         phone: phone || null,
-        locale: locale || null,
+        locale: locale || "en",
         show_in_directory,
-      },
-      { onConflict: "id" }
-    );
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id)
+      .select("id")
+      .maybeSingle();
 
-    if (error) {
-      console.error("Profile save failed:", error.message);
+    if (updateError || !updatedProfile) {
+      console.error("Profile save failed:", {
+        code: updateError?.code ?? "NO_ROW_UPDATED",
+        message:
+          updateError?.message ??
+          "The update did not return a profile row. Check RLS policies and user ID.",
+        details: updateError?.details ?? null,
+        hint: updateError?.hint ?? null,
+        userId: user.id,
+      });
+
       redirect("/profile?error=save");
     }
 
