@@ -23,6 +23,13 @@ type CommunityEvent = {
   created_at: string;
 };
 
+type EventAttendee = {
+  event_id: string;
+  user_id: string;
+  created_at: string;
+  name: string;
+};
+
 type Props = {
   communityId: string;
   canManage: boolean;
@@ -113,6 +120,40 @@ function downloadCalendarInvite(eventItem: CommunityEvent) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+function safeCsvValue(value: string) {
+  const protectedValue = /^[\t\r ]*[=+\-@]/.test(value) ? `'${value}` : value;
+  return `"${protectedValue.replace(/"/g, '""')}"`;
+}
+
+function downloadAttendeeCsv(eventItem: CommunityEvent, attendees: EventAttendee[]) {
+  const rows: string[][] = [
+    ["Event title", "Event starts at", "Attendee", "RSVP recorded at"],
+    ...attendees.map((attendee) => [
+      eventItem.title,
+      new Date(eventItem.starts_at).toISOString(),
+      attendee.name,
+      new Date(attendee.created_at).toISOString(),
+    ]),
+  ];
+  const csv = rows
+    .map((row) => row.map(safeCsvValue).join(","))
+    .join("\r\n");
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  const safeTitle = eventItem.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60) || "community-event";
+  anchor.href = objectUrl;
+  anchor.download = `ruffneck-${safeTitle}-attendees.csv`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
 export default function CommunityEvents({
   communityId,
   canManage,
@@ -123,6 +164,8 @@ export default function CommunityEvents({
   const supabase = useMemo(() => createClient() as unknown as SupabaseClient, []);
   const [events, setEvents] = useState<CommunityEvent[]>([]);
   const [rsvps, setRsvps] = useState<Record<string, boolean>>({});
+  const [attendees, setAttendees] = useState<Record<string, EventAttendee[]>>({});
+  const [attendeeError, setAttendeeError] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -145,6 +188,8 @@ export default function CommunityEvents({
         setUserId(null);
         setEvents([]);
         setRsvps({});
+        setAttendees({});
+        setAttendeeError("");
         setError("Sign in again to view community events.");
         return;
       }
@@ -164,6 +209,8 @@ export default function CommunityEvents({
         console.error("Load community events failed:", eventsError.message);
         setEvents([]);
         setRsvps({});
+        setAttendees({});
+        setAttendeeError("");
         setError("Events could not be loaded. Check the community-events SQL setup.");
         return;
       }
@@ -173,6 +220,8 @@ export default function CommunityEvents({
 
       if (rows.length === 0) {
         setRsvps({});
+        setAttendees({});
+        setAttendeeError("");
         return;
       }
 
@@ -198,13 +247,67 @@ export default function CommunityEvents({
           )
         );
       }
+
+      if (canManage) {
+        const { data: allRsvps, error: allRsvpsError } = await supabase
+          .from("community_event_rsvps")
+          .select("event_id, user_id, created_at")
+          .in("event_id", rows.map((event) => event.id))
+          .order("created_at", { ascending: true });
+
+        if (allRsvpsError) {
+          console.error("Load event attendee list failed:", allRsvpsError.message);
+          setAttendees({});
+          setAttendeeError(
+            "Attendee lists could not be loaded. Check the manager RSVP SELECT policy."
+          );
+        } else {
+          const attendeeRows = (allRsvps ?? []) as Array<{
+            event_id: string;
+            user_id: string;
+            created_at: string;
+          }>;
+          const profileIds = Array.from(new Set(attendeeRows.map((item) => item.user_id)));
+          const nameById: Record<string, string> = {};
+
+          if (profileIds.length > 0) {
+            const { data: profiles, error: profilesError } = await supabase
+              .from("profiles")
+              .select("id, full_name")
+              .in("id", profileIds);
+
+            if (!profilesError && profiles) {
+              for (const profile of profiles as Array<{
+                id: string;
+                full_name: string | null;
+              }>) {
+                nameById[profile.id] = profile.full_name?.trim() || "Community member";
+              }
+            }
+          }
+
+          const grouped: Record<string, EventAttendee[]> = {};
+          for (const item of attendeeRows) {
+            if (!grouped[item.event_id]) grouped[item.event_id] = [];
+            grouped[item.event_id].push({
+              ...item,
+              name: nameById[item.user_id] || "Community member",
+            });
+          }
+          setAttendees(grouped);
+          setAttendeeError("");
+        }
+      } else {
+        setAttendees({});
+        setAttendeeError("");
+      }
     } catch (loadError) {
       console.error("Load community events failed:", loadError);
       setError("A connection problem prevented events from loading.");
     } finally {
       setLoading(false);
     }
-  }, [communityId, supabase]);
+  }, [communityId, canManage, supabase]);
 
   useEffect(() => {
     void loadEvents();
@@ -485,6 +588,54 @@ export default function CommunityEvents({
                 {eventItem.meeting_url && !cancelled && (
                   <p><a href={eventItem.meeting_url} target="_blank" rel="noopener noreferrer">Open meeting link</a></p>
                 )}
+                {canManage && (
+                  <div className="rn-community-event-attendance">
+                    {attendeeError ? (
+                      <p className="muted" role="status">Attendee list unavailable.</p>
+                    ) : (
+                      <>
+                        <span className="status-badge status-active">
+                          {(attendees[eventItem.id] ?? []).length} attending
+                        </span>
+                        <details className="rn-community-event-attendee-details">
+                          <summary>View attendee list</summary>
+                          {(attendees[eventItem.id] ?? []).length === 0 ? (
+                            <p className="muted">No one has RSVP'd yet.</p>
+                          ) : (
+                            <>
+                              <ul className="rn-community-event-attendee-list">
+                                {(attendees[eventItem.id] ?? []).map((attendee) => (
+                                  <li key={`${attendee.event_id}-${attendee.user_id}`}>
+                                    <span>{attendee.name}</span>
+                                    <time dateTime={attendee.created_at}>
+                                      {formatEventDate(attendee.created_at)}
+                                    </time>
+                                  </li>
+                                ))}
+                              </ul>
+                              <button
+                                type="button"
+                                className="button button-secondary"
+                                onClick={() => {
+                                  try {
+                                    downloadAttendeeCsv(eventItem, attendees[eventItem.id] ?? []);
+                                    setError("");
+                                    setMessage("Attendee CSV downloaded.");
+                                  } catch (exportError) {
+                                    console.error("Download attendee CSV failed:", exportError);
+                                    setError("The attendee list could not be exported.");
+                                  }
+                                }}
+                              >
+                                Export attendees CSV
+                              </button>
+                            </>
+                          )}
+                        </details>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="rn-community-event-card-actions">
                   {canRsvp && !cancelled && !isPast && eventItem.status === "scheduled" && (
                     <button
@@ -553,6 +704,12 @@ export default function CommunityEvents({
         .rn-community-event-card h3 { margin: .65rem 0 .4rem; overflow-wrap: anywhere; }
         .rn-community-event-date { font-weight: 750; color: #087a98; }
         .rn-community-event-description { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+        .rn-community-event-attendance { display: flex; align-items: flex-start; flex-wrap: wrap; gap: .65rem; margin-top: .85rem; }
+        .rn-community-event-attendee-details { flex: 1 1 100%; border-top: 1px solid #e2e8f0; padding-top: .7rem; margin-top: .2rem; }
+        .rn-community-event-attendee-details summary { cursor: pointer; font-weight: 750; }
+        .rn-community-event-attendee-list { list-style: none; padding: 0; margin: .65rem 0; display: grid; gap: .45rem; }
+        .rn-community-event-attendee-list li { display: flex; justify-content: space-between; gap: .75rem; align-items: flex-start; padding: .55rem .65rem; background: #f8fafc; border-radius: 8px; }
+        .rn-community-event-attendee-list time { color: #64748b; font-size: .82rem; }
         .rn-community-event-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-top: 1rem; }
         .rn-community-event-card a { overflow-wrap: anywhere; }
         @media (max-width: 700px) {
