@@ -1,0 +1,19 @@
+.wrap { display: grid; gap: 10px; }
+.row { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.preview {
+  display: block; width: 74px; height: 74px; flex: 0 0 74px;
+  object-fit: cover; border-radius: 50%; border: 2px solid #dbe5ef;
+  background: #f1f8fc;
+}
+.fallback {
+  display: grid; place-items: center; color: #0b1e3a; font-weight: 800;
+  font-size: 22px;
+}
+.input { width: 100%; min-width: 0; color: #334155; font-size: 13px; }
+.help { margin: 0; color: #64748b; font-size: 12px; line-height: 1.5; }
+.status { margin: 0; padding: 8px 10px; border-radius: 8px; background: #effcf5; color: #17603c; font-size: 12px; }
+.error { background: #fff1f2; color: #9f1239; }
+@media (max-width: 520px) {
+ .row { align-items: flex-start; flex-direction: column; }
+ .preview { width: 64px; height: 64px; flex-basis: 64px; }
+}
