@@ -10,6 +10,54 @@ type RouteContext = {
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const ATTACHMENT_PREFIX = "__RN_CHAT_ATTACHMENT_V1__:";
+const MAX_MESSAGE_LENGTH = 5000;
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_NAME_LENGTH = 120;
+
+const ALLOWED_ATTACHMENTS: Record<string, string[]> = {
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/webp": [".webp"],
+  "application/pdf": [".pdf"],
+  "application/msword": [".doc"],
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+    ".docx",
+  ],
+  "text/plain": [".txt"],
+};
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json(
+    { error: message },
+    {
+      status,
+      headers: { "Cache-Control": "no-store" },
+    }
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+function validateMessageBody(body: string): string | null {
+  if (!body || body.length > MAX_MESSAGE_LENGTH) {
+    return "Edited messages must contain between 1 and 5,000 characters.";
+  }
+
+  // Attachments are immutable through the text-edit endpoint.
+  if (body.startsWith(ATTACHMENT_PREFIX)) {
+    return "Attachments cannot be edited as text.";
+  }
+
+  return null;
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: RouteContext
@@ -17,66 +65,48 @@ export async function PATCH(
   const { id: conversationId } = await params;
 
   if (!UUID_REGEX.test(conversationId)) {
-    return NextResponse.json(
-      { error: "Invalid conversation ID." },
-      { status: 400 }
-    );
+    return jsonError("Invalid conversation ID.", 400);
   }
 
   const supabase = await createClient();
+
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 }
-    );
+    return jsonError("Authentication required.", 401);
   }
 
   let payload: unknown;
+
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid edit request." },
-      { status: 400 }
-    );
+    return jsonError("Invalid edit request.", 400);
   }
 
-  if (!payload || typeof payload !== "object") {
-    return NextResponse.json(
-      { error: "Invalid edit request." },
-      { status: 400 }
-    );
+  if (!isRecord(payload)) {
+    return jsonError("Invalid edit request.", 400);
   }
 
-  const record = payload as { messageId?: unknown; body?: unknown };
-  const messageId = record.messageId;
-  const rawBody = record.body;
+  const messageId = payload.messageId;
+  const rawBody = payload.body;
 
   if (typeof messageId !== "string" || !UUID_REGEX.test(messageId)) {
-    return NextResponse.json(
-      { error: "Invalid message ID." },
-      { status: 400 }
-    );
+    return jsonError("Invalid message ID.", 400);
   }
 
   if (typeof rawBody !== "string") {
-    return NextResponse.json(
-      { error: "A message body is required." },
-      { status: 400 }
-    );
+    return jsonError("A message body is required.", 400);
   }
 
   const body = rawBody.trim();
-  if (!body || body.length > 5000) {
-    return NextResponse.json(
-      { error: "Edited messages must contain between 1 and 5,000 characters." },
-      { status: 400 }
-    );
+  const validationError = validateMessageBody(body);
+
+  if (validationError) {
+    return jsonError(validationError, 400);
   }
 
   const { data: participant, error: participantError } = await supabase
@@ -87,15 +117,22 @@ export async function PATCH(
     .eq("status", "active")
     .maybeSingle();
 
-  if (participantError || !participant) {
-    return NextResponse.json(
-      { error: "You are not an active participant in this conversation." },
-      { status: 403 }
+  if (participantError) {
+    console.error(
+      "Conversation participant lookup failed:",
+      participantError.message
+    );
+
+    return jsonError("Unable to verify conversation membership.", 500);
+  }
+
+  if (!participant) {
+    return jsonError(
+      "You are not an active participant in this conversation.",
+      403
     );
   }
 
-  // RLS independently enforces that the row belongs to the caller and is not
-  // deleted. The database trigger maintains edited_at when body changes.
   const { data: message, error: updateError } = await supabase
     .from("messages")
     .update({ body })
@@ -110,18 +147,22 @@ export async function PATCH(
 
   if (updateError) {
     console.error("Message edit failed:", updateError.message);
-    return NextResponse.json(
-      { error: "Unable to edit this message." },
-      { status: 500 }
-    );
+
+    return jsonError("Unable to edit this message.", 500);
   }
 
   if (!message) {
-    return NextResponse.json(
-      { error: "Message not found or you cannot edit it." },
-      { status: 404 }
+    return jsonError(
+      "Message not found or you cannot edit it.",
+      404
     );
   }
 
-  return NextResponse.json({ message }, { status: 200 });
+  return NextResponse.json(
+    { message },
+    {
+      status: 200,
+      headers: { "Cache-Control": "no-store" },
+    }
+  );
 }
