@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-type ConnectionStatus = "pending" | "accepted" | "declined" | "cancelled" | "removed";
+type ConnectionStatus = "pending" | "accepted" | "declined" | "cancelled";
 type ConnectionDirection = "incoming" | "outgoing" | "connected";
 
 type ConnectionRecord = {
@@ -19,6 +19,38 @@ type Props = {
   initialConnection?: ConnectionRecord | null;
   initialLoaded?: boolean;
 };
+
+function connectionErrorMessage(rawMessage: string, action: "request" | "respond" | "chat") {
+  const message = rawMessage.toLowerCase();
+
+  if (message.includes("member_blocked") || message.includes("blocked")) {
+    return "A private connection is unavailable because one of these accounts has blocked the other.";
+  }
+
+  if (message.includes("accept the connection request") || message.includes("connection must be accepted")) {
+    return "Your connection is not accepted yet. The other member must accept the request before you can start a private chat.";
+  }
+
+  if (message.includes("member is unavailable") || message.includes("show_in_directory")) {
+    return "This member is unavailable for connections or private messages.";
+  }
+
+  if (message.includes("authentication required") || message.includes("jwt")) {
+    return "Your session has expired. Sign in again, then retry.";
+  }
+
+  if (message.includes("function") && (message.includes("does not exist") || message.includes("schema cache"))) {
+    return "The connection database setup is incomplete. Check that the required Supabase function exists and is executable by authenticated users.";
+  }
+
+  if (action === "request") {
+    return "The connection request could not be sent. Refresh the page and try again.";
+  }
+  if (action === "respond") {
+    return "The connection request could not be updated. It may have already been processed; refresh the page and check its status.";
+  }
+  return "The private conversation could not be opened. Refresh the page and retry. If this continues, check the Supabase function and Vercel logs.";
+}
 
 export default function MemberConnectionButton({
   otherUserId,
@@ -40,13 +72,14 @@ export default function MemberConnectionButton({
     );
 
     if (statusError) {
-      setError("Connection status could not be loaded. Refresh and try again.");
-      return;
+      setError(connectionErrorMessage(statusError.message, "request"));
+      return false;
     }
 
     const rows = (data ?? []) as ConnectionRecord[];
     setConnection(rows[0] ?? null);
     setError("");
+    return true;
   }, [otherUserId]);
 
   useEffect(() => {
@@ -65,10 +98,10 @@ export default function MemberConnectionButton({
         "get_member_connection_status",
         { p_other_user_id: otherUserId }
       );
-
       if (!active) return;
+
       if (statusError) {
-        setError("Connection status could not be loaded. Refresh and try again.");
+        setError(connectionErrorMessage(statusError.message, "request"));
       } else {
         const rows = (data ?? []) as ConnectionRecord[];
         setConnection(rows[0] ?? null);
@@ -87,6 +120,7 @@ export default function MemberConnectionButton({
     setWorking(true);
     setError("");
     setMessage("");
+
     const supabase = createClient();
     const { data, error: requestError } = await supabase.rpc(
       "request_member_connection",
@@ -94,25 +128,33 @@ export default function MemberConnectionButton({
     );
 
     if (requestError) {
-      setError("The connection request could not be sent. Please try again.");
+      setError(connectionErrorMessage(requestError.message, "request"));
     } else {
       const rows = (data ?? []) as ConnectionRecord[];
-      setConnection(rows[0] ?? null);
-      setMessage(rows[0]?.direction === "incoming"
-        ? "This member has already sent you a request. You can accept it below."
-        : rows[0]?.status === "accepted"
-          ? "You are already connected."
-          : "Connection request sent.");
+      const nextConnection = rows[0] ?? null;
+      if (nextConnection) setConnection(nextConnection);
+
+      setMessage(
+        nextConnection?.direction === "incoming"
+          ? "This member has already sent you a request. Accept it below."
+          : nextConnection?.status === "accepted"
+            ? "You are already connected. You can now open a private chat."
+            : "Connection request sent. You can chat privately after the other member accepts."
+      );
       await loadStatus();
+      router.refresh();
     }
+
     setWorking(false);
   }
 
   async function respondToRequest(accept: boolean) {
     if (!connection) return;
+
     setWorking(true);
     setError("");
     setMessage("");
+
     const supabase = createClient();
     const { error: responseError } = await supabase.rpc(
       "respond_to_member_connection",
@@ -123,84 +165,40 @@ export default function MemberConnectionButton({
     );
 
     if (responseError) {
-      setError(accept
-        ? "The connection request could not be accepted."
-        : "The connection request could not be declined.");
+      setError(connectionErrorMessage(responseError.message, "respond"));
     } else {
       await loadStatus();
-      setMessage(accept ? "Connection accepted. You can now message this member." : "Connection request declined.");
-      router.refresh();
-    }
-    setWorking(false);
-  }
-
-  async function cancelRequest() {
-    if (!connection || connection.status !== "pending" || connection.direction !== "outgoing") {
-      return;
-    }
-
-    setWorking(true);
-    setError("");
-    setMessage("");
-    const supabase = createClient();
-    const { error: cancelError } = await supabase.rpc(
-      "cancel_member_connection_request",
-      { p_connection_id: connection.connection_id }
-    );
-
-    if (cancelError) {
-      console.error("Could not cancel connection request:", cancelError.message);
-      setError("The request could not be cancelled. Refresh and try again.");
-    } else {
-      setConnection({ ...connection, status: "cancelled" });
-      setMessage("Connection request cancelled.");
-      await loadStatus();
+      setMessage(
+        accept
+          ? "Connection accepted. You can now open a private chat."
+          : "Connection request declined."
+      );
       router.refresh();
     }
 
-    setWorking(false);
-  }
-
-  async function removeConnection() {
-    if (!connection || connection.status !== "accepted") return;
-
-    const confirmed = window.confirm(
-      "Remove this connection? The relationship will be removed from both connection lists. Existing message history will not be deleted."
-    );
-    if (!confirmed) return;
-
-    setWorking(true);
-    setError("");
-    setMessage("");
-    const supabase = createClient();
-    const { error: removeError } = await supabase.rpc(
-      "remove_member_connection",
-      { p_connection_id: connection.connection_id }
-    );
-
-    if (removeError) {
-      console.error("Could not remove connection:", removeError.message);
-      setError("The connection could not be removed. Refresh and try again.");
-    } else {
-      setConnection({ ...connection, status: "removed", direction: connection.direction === "connected" ? "connected" : connection.direction });
-      setMessage("Connection removed. You can send a new request later.");
-      await loadStatus();
-      router.refresh();
-    }
     setWorking(false);
   }
 
   async function openConversation() {
     setWorking(true);
     setError("");
+    setMessage("");
+
     const supabase = createClient();
     const { data, error: conversationError } = await supabase.rpc(
       "get_or_create_direct_conversation",
       { p_other_user_id: otherUserId }
     );
 
-    if (conversationError || typeof data !== "string") {
-      setError("A private conversation could not be opened. Confirm that the connection is accepted, then try again.");
+    if (conversationError) {
+      console.error("Open direct conversation failed:", conversationError.message);
+      setError(connectionErrorMessage(conversationError.message, "chat"));
+      setWorking(false);
+      return;
+    }
+
+    if (typeof data !== "string" || !data.trim()) {
+      setError("The chat function returned no conversation ID. Check get_or_create_direct_conversation in Supabase.");
       setWorking(false);
       return;
     }
@@ -214,7 +212,7 @@ export default function MemberConnectionButton({
   const outgoingPending = connection?.status === "pending" && connection.direction === "outgoing";
 
   return (
-    <div className="member-connection-actions">
+    <div className="member-connection-actions" aria-live="polite">
       {loading ? (
         <button className="button button-secondary" type="button" disabled>
           Checking connection…
@@ -224,9 +222,6 @@ export default function MemberConnectionButton({
           <span className="status-badge status-active">Connected</span>
           <button className="button button-primary" type="button" onClick={openConversation} disabled={working}>
             {working ? "Opening chat…" : "Message"}
-          </button>
-          <button className="button button-secondary" type="button" onClick={removeConnection} disabled={working}>
-            {working ? "Removing…" : "Remove connection"}
           </button>
         </>
       ) : incomingPending ? (
@@ -240,25 +235,14 @@ export default function MemberConnectionButton({
           </button>
         </>
       ) : outgoingPending ? (
-        <>
-          <span className="status-badge status-pending">Request sent · awaiting response</span>
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={cancelRequest}
-            disabled={working}
-          >
-            {working ? "Cancelling…" : "Cancel request"}
-          </button>
-        </>
+        <span className="status-badge status-pending">Request sent · awaiting response</span>
       ) : (
         <button className="button button-primary" type="button" onClick={requestConnection} disabled={working}>
-          {working ? "Sending…" : connection?.status === "declined" || connection?.status === "cancelled" || connection?.status === "removed" ? "Connect again" : "Connect"}
+          {working ? "Sending…" : connection?.status === "declined" || connection?.status === "cancelled" ? "Connect again" : "Connect"}
         </button>
       )}
-
       {message && <p className="muted" role="status">{message}</p>}
-      {error && <p role="alert" className="muted">{error}</p>}
+      {error && <p className="connection-action-error" role="alert">{error}</p>}
     </div>
   );
 }
