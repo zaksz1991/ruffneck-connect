@@ -90,7 +90,9 @@ function validateEventForm(formData: FormData): {
   const endsAtInput = String(formData.get("ends_at") ?? "");
 
   if (title.length < 3 || title.length > 120) {
-    return { error: "Event title must contain between 3 and 120 characters." };
+    return {
+      error: "Event title must contain between 3 and 120 characters.",
+    };
   }
 
   if (description.length > 2000) {
@@ -124,7 +126,9 @@ function validateEventForm(formData: FormData): {
       Number.isNaN(endsAt.getTime()) ||
       endsAt.getTime() <= startsAt.getTime()
     ) {
-      return { error: "The event end time must be after its start time." };
+      return {
+        error: "The event end time must be after its start time.",
+      };
     }
   }
 
@@ -143,7 +147,8 @@ function validateEventForm(formData: FormData): {
       meetingUrl = parsedUrl.toString();
     } catch {
       return {
-        error: "Enter a valid meeting link beginning with https:// or http://.",
+        error:
+          "Enter a valid meeting link beginning with https:// or http://.",
       };
     }
   }
@@ -232,9 +237,7 @@ function downloadCalendarInvite(eventItem: CommunityEvent) {
 
   const description = [
     eventItem.description?.trim() || "",
-    eventItem.meeting_url
-      ? `Meeting link: ${eventItem.meeting_url}`
-      : "",
+    eventItem.meeting_url ? `Meeting link: ${eventItem.meeting_url}` : "",
     `Community event on RuffNeck Connect: ${eventPageUrl.toString()}`,
   ]
     .filter(Boolean)
@@ -342,11 +345,15 @@ export default function CommunityEvents({
         setRsvps({});
         setAttendees({});
         setAttendeeError("");
-        setError("Events could not be loaded. Please refresh and try again.");
+        setError(
+          `Events could not be loaded: ${eventsError.message}`
+        );
         return;
       }
 
       const rows = (data ?? []) as unknown as CommunityEvent[];
+
+      // Render the primary event data before loading optional RSVP details.
       setEvents(rows);
 
       if (rows.length === 0) {
@@ -477,7 +484,7 @@ export default function CommunityEvents({
     setMessage("");
 
     try {
-      const { error: insertError } = await supabase
+      const { data: createdEvent, error: insertError } = await supabase
         .from("community_events")
         .insert({
           community_id: communityId,
@@ -489,18 +496,46 @@ export default function CommunityEvents({
           event_mode: values.eventMode,
           starts_at: values.startsAt.toISOString(),
           ends_at: values.endsAt?.toISOString() ?? null,
-        });
+        })
+        .select(
+          "id, community_id, created_by, title, description, location, meeting_url, event_mode, starts_at, ends_at, status, created_at"
+        )
+        .single();
 
-      if (insertError) {
-        console.error("Create community event failed:", insertError.message);
+      if (insertError || !createdEvent) {
+        console.error(
+          "Create community event failed:",
+          insertError?.message ?? "No event record was returned"
+        );
         setError(
-          "The event could not be created. Check your permissions and try again."
+          insertError
+            ? `The event could not be created: ${insertError.message}`
+            : "The event could not be created. No event record was returned."
         );
         return;
       }
 
+      // Show the newly created event immediately, even if a later refresh fails.
+      setEvents((current) => {
+        const withoutDuplicate = current.filter(
+          (eventItem) => eventItem.id !== createdEvent.id
+        );
+
+        return [...withoutDuplicate, createdEvent as CommunityEvent].sort(
+          (a, b) =>
+            new Date(a.starts_at).getTime() -
+            new Date(b.starts_at).getTime()
+        );
+      });
+
+      setRsvps((current) => ({ ...current, [createdEvent.id]: false }));
+      setAttendees((current) => ({ ...current, [createdEvent.id]: [] }));
+
       form.reset();
       setMessage("Community event created.");
+      setError("");
+
+      // Refresh secondary information without losing the newly created event.
       await loadEvents();
     } catch (createError) {
       console.error("Create community event failed:", createError);
@@ -829,7 +864,9 @@ export default function CommunityEvents({
       >
         <button
           type="button"
-          className={`button ${showAll ? "button-secondary" : "button-primary"}`}
+          className={`button ${
+            showAll ? "button-secondary" : "button-primary"
+          }`}
           onClick={() => setShowAll(false)}
           aria-pressed={!showAll}
         >
@@ -838,7 +875,9 @@ export default function CommunityEvents({
 
         <button
           type="button"
-          className={`button ${showAll ? "button-primary" : "button-secondary"}`}
+          className={`button ${
+            showAll ? "button-primary" : "button-secondary"
+          }`}
           onClick={() => setShowAll(true)}
           aria-pressed={showAll}
         >
@@ -865,13 +904,17 @@ export default function CommunityEvents({
         </p>
       )}
 
-      {loading ? (
+      {loading && events.length === 0 ? (
         <div className="empty-state">
           <p>Loading community events…</p>
         </div>
       ) : visibleEvents.length === 0 ? (
         <div className="empty-state">
-          <h3>{showAll ? "No events have been published" : "No upcoming events"}</h3>
+          <h3>
+            {showAll
+              ? "No events have been published"
+              : "No upcoming events"}
+          </h3>
           <p>
             {canManage
               ? "Create an event to bring community members together."
@@ -1327,6 +1370,7 @@ export default function CommunityEvents({
           margin: 0.75rem 0;
           padding: 0.8rem 1rem;
           border-radius: 10px;
+          overflow-wrap: anywhere;
         }
 
         .rn-community-event-error {
