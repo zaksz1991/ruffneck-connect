@@ -7,6 +7,7 @@ import CommunityActivityLog from "./CommunityActivityLog";
 import CommunityShareButton from "./CommunityShareButton";
 import CommunityInvitationCard from "./CommunityInvitationCard";
 import CommunityEvents from "./CommunityEvents";
+import CommunityManagementControls from "./CommunityManagementControls";
 
 export const dynamic = "force-dynamic";
 
@@ -74,12 +75,16 @@ const MEMBER_ERROR_MESSAGES: Record<string, string> = {
   select_user: "Select a user before adding a member.",
   already_member: "You cannot add yourself as a member.",
   user_unavailable: "That user is unavailable in the public directory.",
-  add_failed: "The member could not be added. Check your permissions and try again.",
+  add_failed:
+    "The member could not be added. Check your permissions and try again.",
   invalid_target: "The selected member cannot be removed.",
-  remove_failed: "The member could not be removed. Check your permissions and try again.",
+  remove_failed:
+    "The member could not be removed. Check your permissions and try again.",
   invalid_role_change: "The requested role change is invalid.",
-  role_change_failed: "The role could not be changed. Only the community owner can change member roles.",
-  join_failed: "We couldn’t submit your membership request. Please refresh and try again.",
+  role_change_failed:
+    "The role could not be changed. Only the community owner can change member roles.",
+  join_failed:
+    "We couldn’t submit your membership request. Please refresh and try again.",
 };
 
 export default async function CommunityDetailsPage({
@@ -88,12 +93,15 @@ export default async function CommunityDetailsPage({
 }: PageProps) {
   const { slug } = await params;
   const query = searchParams ? await searchParams : {};
+
   const memberSuccessMessage = query.member_success
     ? MEMBER_SUCCESS_MESSAGES[query.member_success]
     : undefined;
+
   const memberErrorMessage = query.member_error
     ? MEMBER_ERROR_MESSAGES[query.member_error]
     : undefined;
+
   const supabase = await createClient();
 
   const {
@@ -134,7 +142,6 @@ export default async function CommunityDetailsPage({
   const isOwner = community.owner_id === user.id;
   const isMember = membership?.status === "active";
   const isPending = membership?.status === "pending";
-
   const isModerator = isMember && membership?.role === "moderator";
 
   const canManageMembers = isOwner || isModerator;
@@ -169,7 +176,6 @@ export default async function CommunityDetailsPage({
 
   const ownerName = profile?.full_name || "Community owner";
 
-  // Retrieve active members and their visible profile information.
   let members: CommunityMember[] = [];
   let memberProfiles: MemberProfile[] = [];
 
@@ -200,7 +206,6 @@ export default async function CommunityDetailsPage({
     }
   }
 
-  // Only owners and active moderators can load candidates for the add form.
   let availableProfiles: MemberProfile[] = [];
 
   if (canManageMembers) {
@@ -216,9 +221,9 @@ export default async function CommunityDetailsPage({
       .order("full_name", { ascending: true })
       .limit(200);
 
-    availableProfiles = ((directoryProfiles ?? []) as MemberProfile[]).filter(
-      (candidate) => !existingIds.has(candidate.id)
-    );
+    availableProfiles = (
+      (directoryProfiles ?? []) as MemberProfile[]
+    ).filter((candidate) => !existingIds.has(candidate.id));
   }
 
   const profileById = new Map(
@@ -497,15 +502,34 @@ export default async function CommunityDetailsPage({
         <section className="section" aria-live="polite">
           {memberSuccessMessage && (
             <article className="feature-card" role="status">
-              <p className="status-badge status-active">{memberSuccessMessage}</p>
+              <p className="status-badge status-active">
+                {memberSuccessMessage}
+              </p>
             </article>
           )}
+
           {memberErrorMessage && (
             <article className="feature-card" role="alert">
               <p>{memberErrorMessage}</p>
             </article>
           )}
         </section>
+      )}
+
+      {/* Community owner controls */}
+      {isOwner && (
+        <CommunityManagementControls
+          community={{
+            id: community.id,
+            slug: community.slug,
+            name: community.name,
+            description: community.description,
+            category: community.category,
+            location_label: community.location_label,
+            visibility: community.visibility,
+            join_approval_required: community.join_approval_required,
+          }}
+        />
       )}
 
       {canManageMembers && (
@@ -559,7 +583,9 @@ export default async function CommunityDetailsPage({
               ) : (
                 members.map((member) => {
                   const memberProfile = profileById.get(member.user_id);
-                  const isTargetOwner = member.user_id === community.owner_id;
+                  const isTargetOwner =
+                    member.user_id === community.owner_id;
+
                   const displayName =
                     memberProfile?.full_name ||
                     (isTargetOwner ? ownerName : "RuffNeck member");
@@ -624,6 +650,7 @@ export default async function CommunityDetailsPage({
                               name="user_id"
                               value={member.user_id}
                             />
+
                             <input
                               type="hidden"
                               name="new_role"
@@ -633,6 +660,7 @@ export default async function CommunityDetailsPage({
                                   : "moderator"
                               }
                             />
+
                             <button
                               className="button button-secondary"
                               type="submit"
@@ -686,10 +714,7 @@ export default async function CommunityDetailsPage({
                       ))}
                     </select>
 
-                    <button
-                      className="button button-primary"
-                      type="submit"
-                    >
+                    <button className="button button-primary" type="submit">
                       Add to community
                     </button>
                   </form>
@@ -730,12 +755,12 @@ export default async function CommunityDetailsPage({
             </p>
 
             <p>
-              <strong>Location:</strong> {" "}
+              <strong>Location:</strong>{" "}
               {community.location_label || "Not specified"}
             </p>
 
             <p>
-              <strong>Membership:</strong> {" "}
+              <strong>Membership:</strong>{" "}
               {community.join_approval_required
                 ? "Approval required"
                 : "Open to join"}
