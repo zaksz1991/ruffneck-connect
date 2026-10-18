@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConversationMessages from "@/components/ConversationMessages";
+import MemberSafetyActions from "@/components/MemberSafetyActions";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,6 @@ type ConversationParticipantProfile = {
   full_name: string | null;
   avatar_url: string | null;
 };
-
 type ReplyPreview = {
   id: string;
   sender_id: string;
@@ -61,14 +61,10 @@ type Conversation = {
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function ConversationPage({
-  params,
-}: PageProps) {
+export default async function ConversationPage({ params }: PageProps) {
   const { id } = await params;
 
-  if (!UUID_REGEX.test(id)) {
-    notFound();
-  }
+  if (!UUID_REGEX.test(id)) notFound();
 
   const supabase = await createClient();
   const {
@@ -76,38 +72,22 @@ export default async function ConversationPage({
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(
-      `/login?next=${encodeURIComponent(`/messages/${id}`)}`
-    );
+    redirect(`/login?next=${encodeURIComponent(`/messages/${id}`)}`);
   }
 
-  const {
-    data: conversation,
-    error: conversationError,
-  } = await supabase
+  const { data: conversation, error: conversationError } = await supabase
     .from("conversations")
-    .select(
-      "id, conversation_type, intent_id, title, created_at"
-    )
+    .select("id, conversation_type, intent_id, title, created_at")
     .eq("id", id)
     .maybeSingle();
 
   if (conversationError) {
-    console.error(
-      "Failed to load conversation:",
-      conversationError.message
-    );
+    console.error("Failed to load conversation:", conversationError.message);
   }
-
-  if (!conversation) {
-    notFound();
-  }
+  if (!conversation) notFound();
 
   const currentConversation = conversation as Conversation;
-  const {
-    data: ownParticipant,
-    error: participantError,
-  } = await supabase
+  const { data: ownParticipant, error: participantError } = await supabase
     .from("conversation_participants")
     .select("user_id, status")
     .eq("conversation_id", id)
@@ -115,19 +95,12 @@ export default async function ConversationPage({
     .eq("status", "active")
     .maybeSingle();
 
-  if (participantError || !ownParticipant) {
-    notFound();
-  }
+  if (participantError || !ownParticipant) notFound();
 
-  // Use the membership-checked RPC to reveal only participant IDs, names,
-  // and avatar URLs. Direct reads of other membership rows remain restricted.
-  const {
-    data: participantRows,
-    error: participantProfilesError,
-  } = await supabase.rpc(
-    "get_conversation_participants",
-    { p_conversation_id: id }
-  );
+  const { data: participantRows, error: participantProfilesError } =
+    await supabase.rpc("get_conversation_participants", {
+      p_conversation_id: id,
+    });
 
   if (participantProfilesError) {
     console.error(
@@ -136,25 +109,19 @@ export default async function ConversationPage({
     );
   }
 
-  const participants =
-    (participantRows ?? []) as ConversationParticipantProfile[];
+  const participants = (participantRows ?? []) as ConversationParticipantProfile[];
   const otherParticipants = participants.filter(
     (participant) => participant.user_id !== user.id
   );
   const otherNames = otherParticipants.map(
-    (participant) =>
-      participant.full_name?.trim() || "RuffNeck member"
+    (participant) => participant.full_name?.trim() || "RuffNeck member"
   );
-
   const conversationTitle =
     currentConversation.conversation_type === "intent"
       ? currentConversation.title || "Intent conversation"
       : otherNames.join(", ") || "Direct conversation";
 
-  const {
-    data: messageRows,
-    error: messagesError,
-  } = await supabase
+  const { data: messageRows, error: messagesError } = await supabase
     .from("messages")
     .select(
       "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
@@ -166,14 +133,14 @@ export default async function ConversationPage({
     .limit(200);
 
   if (messagesError) {
-    console.error(
-      "Failed to load messages:",
-      messagesError.message
-    );
+    console.error("Failed to load messages:", messagesError.message);
   }
 
-  // Fetch newest rows for scale, then restore chronological display order.
   const messages = (messageRows ?? []).map(normalizeMessageQueryRow).reverse();
+  const directOtherParticipant =
+    currentConversation.conversation_type === "direct" && otherParticipants.length === 1
+      ? otherParticipants[0]
+      : null;
 
   return (
     <main className="page-shell">
@@ -181,7 +148,6 @@ export default async function ConversationPage({
         <Link href="/messages" className="back-link">
           ← All messages
         </Link>
-
         <div className="conversation-page-header">
           <div>
             <p className="eyebrow">
@@ -195,6 +161,7 @@ export default async function ConversationPage({
             </p>
           </div>
           {otherParticipants[0]?.avatar_url && (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={otherParticipants[0].avatar_url}
               alt=""
@@ -211,6 +178,13 @@ export default async function ConversationPage({
             />
           )}
         </div>
+
+        {directOtherParticipant && (
+          <MemberSafetyActions
+            otherUserId={directOtherParticipant.user_id}
+            otherUserName={directOtherParticipant.full_name?.trim() || "RuffNeck member"}
+          />
+        )}
 
         <ConversationMessages
           conversationId={id}

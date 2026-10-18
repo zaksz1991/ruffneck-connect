@@ -23,10 +23,7 @@ export async function POST(
   const { id } = await params;
 
   if (!UUID_REGEX.test(id)) {
-    return NextResponse.json(
-      { error: "Invalid conversation ID." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid conversation ID." }, { status: 400 });
   }
 
   const supabase = await createClient();
@@ -37,10 +34,7 @@ export async function POST(
 
   if (authError || !user) {
     return NextResponse.redirect(
-      new URL(
-        `/login?next=${encodeURIComponent(`/messages/${id}`)}`,
-        request.url
-      ),
+      new URL(`/login?next=${encodeURIComponent(`/messages/${id}`)}`, request.url),
       303
     );
   }
@@ -55,9 +49,7 @@ export async function POST(
       const payload: unknown = await request.json();
       if (typeof payload === "object" && payload !== null) {
         body = "body" in payload ? payload.body : undefined;
-        rawReplyToMessageId = "replyToMessageId" in payload
-          ? payload.replyToMessageId
-          : null;
+        rawReplyToMessageId = "replyToMessageId" in payload ? payload.replyToMessageId : null;
       }
     } else {
       const formData = await request.formData();
@@ -65,68 +57,42 @@ export async function POST(
       rawReplyToMessageId = formData.get("replyToMessageId");
     }
   } catch {
-    return NextResponse.json(
-      { error: "Invalid message request." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid message request." }, { status: 400 });
   }
 
   if (typeof body !== "string") {
-    return NextResponse.json(
-      { error: "A message is required." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "A message is required." }, { status: 400 });
   }
 
   const messageBody = body.trim();
-
   if (!messageBody || messageBody.length > 5000) {
     return NextResponse.json(
-      {
-        error:
-          "Messages must contain between 1 and 5,000 characters.",
-      },
+      { error: "Messages must contain between 1 and 5,000 characters." },
       { status: 400 }
     );
   }
 
-  const { data: participant, error: participantError } =
-    await supabase
-      .from("conversation_participants")
-      .select("conversation_id")
-      .eq("conversation_id", id)
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .maybeSingle();
+  const { data: participant, error: participantError } = await supabase
+    .from("conversation_participants")
+    .select("conversation_id")
+    .eq("conversation_id", id)
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
 
   if (participantError || !participant) {
     return NextResponse.json(
-      {
-        error:
-          "You are not an active participant in this conversation.",
-      },
+      { error: "You are not an active participant in this conversation." },
       { status: 403 }
     );
   }
 
   let replyToMessageId: string | null = null;
-
-  if (
-    rawReplyToMessageId !== null &&
-    rawReplyToMessageId !== undefined &&
-    rawReplyToMessageId !== ""
-  ) {
-    if (
-      typeof rawReplyToMessageId !== "string" ||
-      !UUID_REGEX.test(rawReplyToMessageId)
-    ) {
-      return NextResponse.json(
-        { error: "Invalid reply target." },
-        { status: 400 }
-      );
+  if (rawReplyToMessageId !== null && rawReplyToMessageId !== undefined && rawReplyToMessageId !== "") {
+    if (typeof rawReplyToMessageId !== "string" || !UUID_REGEX.test(rawReplyToMessageId)) {
+      return NextResponse.json({ error: "Invalid reply target." }, { status: 400 });
     }
 
-    // Do not disclose whether a message exists in a different conversation.
     const { data: parentMessage, error: parentError } = await supabase
       .from("messages")
       .select("id, conversation_id, deleted_at")
@@ -144,7 +110,6 @@ export async function POST(
         { status: 400 }
       );
     }
-
     replyToMessageId = parentMessage.id;
   }
 
@@ -156,49 +121,40 @@ export async function POST(
       body: messageBody,
       ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
     })
-    .select(
-      "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id"
-    )
+    .select("id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id")
     .single();
 
   if (insertError || !message) {
-    console.error("Message insert failed:", insertError?.message);
+    if (insertError?.message?.includes("MEMBER_BLOCKED")) {
+      return NextResponse.json(
+        { error: "This message was not sent because you or the other member has blocked the other." },
+        { status: 403, headers: { "Cache-Control": "no-store" } }
+      );
+    }
 
+    console.error("Message insert failed:", insertError?.message);
     return NextResponse.json(
       { error: "Unable to send your message." },
-      { status: 500 }
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 
   // The AFTER INSERT database trigger updates last_message_at and updated_at.
-  // The application role may not update these system-managed columns directly.
-
-  // Use the membership-checked RPC to identify notification recipients.
-  const { data: participantRows, error: recipientsError } =
-    await supabase.rpc("get_conversation_participants", {
-      p_conversation_id: id,
-    });
+  const { data: participantRows, error: recipientsError } = await supabase.rpc(
+    "get_conversation_participants",
+    { p_conversation_id: id }
+  );
 
   if (recipientsError) {
-    console.error(
-      "Failed to load message notification recipients:",
-      recipientsError.message
-    );
+    console.error("Failed to load message notification recipients:", recipientsError.message);
   } else {
-    const recipients = (
-      (participantRows ?? []) as ParticipantProfile[]
-    ).filter((recipient) => recipient.user_id !== user.id);
-
+    const recipients = ((participantRows ?? []) as ParticipantProfile[]).filter(
+      (recipient) => recipient.user_id !== user.id
+    );
     if (recipients.length > 0) {
       const senderName =
-        user.user_metadata?.full_name?.trim() ||
-        user.email?.split("@")[0] ||
-        "A RuffNeck member";
-      const preview =
-        messageBody.length > 140
-          ? `${messageBody.slice(0, 137)}...`
-          : messageBody;
-
+        user.user_metadata?.full_name?.trim() || user.email?.split("@")[0] || "A RuffNeck member";
+      const preview = messageBody.length > 140 ? `${messageBody.slice(0, 137)}...` : messageBody;
       const notifications = recipients.map((recipient) => ({
         user_id: recipient.user_id,
         actor_id: user.id,
@@ -207,26 +163,13 @@ export async function POST(
         body: preview,
         link: `/messages/${id}`,
       }));
-
-      const { error: notificationError } = await supabase
-        .from("notifications")
-        .insert(notifications);
-
+      const { error: notificationError } = await supabase.from("notifications").insert(notifications);
       if (notificationError) {
-        console.error(
-          "Message notification insert failed:",
-          notificationError.message
-        );
+        console.error("Message notification insert failed:", notificationError.message);
       }
     }
   }
 
-  if (isJson) {
-    return NextResponse.json({ message }, { status: 201 });
-  }
-
-  return NextResponse.redirect(
-    new URL(`/messages/${id}`, request.url),
-    303
-  );
+  if (isJson) return NextResponse.json({ message }, { status: 201 });
+  return NextResponse.redirect(new URL(`/messages/${id}`, request.url), 303);
 }
