@@ -535,3 +535,105 @@ main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-
     transition: none;
   }
 }
+
+/* ================================================================
+   Message action bar polish — explicit spacing and readable controls
+   Fixes the ForwardReplyEditDelete appearance without changing logic.
+   ================================================================ */
+main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  column-gap: 8px !important;
+  row-gap: 7px !important;
+  margin-top: 10px !important;
+  padding-top: 9px !important;
+  border-top: 1px solid rgb(102 119 129 / 18%) !important;
+  opacity: 1 !important;
+}
+
+main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) > button,
+main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) > a {
+  appearance: none !important;
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 32px !important;
+  margin: 0 2px 2px 0 !important;
+  padding: 6px 11px !important;
+  border: 1px solid #d5e2df !important;
+  border-radius: 999px !important;
+  background: #ffffff !important;
+  color: #166454 !important;
+  box-shadow: 0 1px 2px rgb(16 42 35 / 7%) !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0 !important;
+  text-align: center !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  transition: background-color 140ms ease, border-color 140ms ease,
+    box-shadow 140ms ease, transform 140ms ease !important;
+}
+
+main.page-shell:has(.message-panel) .message-own > div:last-child:not([aria-label="Message reactions"]) > button,
+main.page-shell:has(.message-panel) .message-own > div:last-child:not([aria-label="Message reactions"]) > a {
+  border-color: #b7d9cb !important;
+  background: #f9fffb !important;
+  color: #12634f !important;
+}
+
+main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) > button:hover:not(:disabled),
+main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) > a:hover {
+  border-color: #008069 !important;
+  background: #e8f7f1 !important;
+  box-shadow: 0 2px 5px rgb(0 128 105 / 12%) !important;
+  transform: translateY(-1px);
+}
+
+main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) > button:focus-visible {
+  outline: 3px solid rgb(0 128 105 / 24%) !important;
+  outline-offset: 2px !important;
+}
+
+main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) > button:disabled {
+  cursor: not-allowed !important;
+  opacity: .52 !important;
+  transform: none !important;
+}
+
+/* Give the reaction strip its own breathing room above the action bar. */
+main.page-shell:has(.message-panel) .message-bubble [aria-label="Message reactions"] {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-top: 9px !important;
+  padding-bottom: 2px !important;
+}
+
+/* Keep action labels readable on narrow screens; buttons wrap instead of merging. */
+@media (max-width: 640px) {
+  main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) {
+    justify-content: flex-start !important;
+    column-gap: 6px !important;
+    row-gap: 6px !important;
+    padding-top: 8px !important;
+  }
+
+  main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) > button,
+  main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) > a {
+    min-height: 31px !important;
+    padding: 6px 9px !important;
+    font-size: 11px !important;
+  }
+}
