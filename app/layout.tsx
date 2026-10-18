@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import GlobalHeader from "@/components/GlobalHeader";
 import "./globals.css";
+import "./messages-whatsapp.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(

@@ -1,0 +1,537 @@
+/* RuffNeck Connect — WhatsApp-inspired messaging UI
+   Scoped to the existing message pages and their existing class names.
+   No message logic or database behaviour is changed. */
+
+:root {
+  --rn-wa-green: #008069;
+  --rn-wa-green-dark: #006b5a;
+  --rn-wa-outgoing: #d9fdd3;
+  --rn-wa-incoming: #ffffff;
+  --rn-wa-wallpaper: #efeae2;
+  --rn-wa-toolbar: #f0f2f5;
+  --rn-wa-text: #111b21;
+  --rn-wa-muted: #667781;
+  --rn-wa-border: #dfe5e7;
+}
+
+/* Conversation view */
+main.page-shell:has(.message-panel) {
+  min-height: calc(100vh - 70px);
+  padding: clamp(10px, 2vw, 26px) !important;
+  background: #e9edef !important;
+  color: var(--rn-wa-text);
+}
+
+main.page-shell:has(.message-panel) > .section {
+  width: 100%;
+  max-width: 1320px !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  overflow: hidden;
+  border: 1px solid var(--rn-wa-border);
+  border-radius: 15px;
+  background: #f7f9fa;
+  box-shadow: 0 8px 32px rgb(15 35 43 / 9%);
+}
+
+main.page-shell:has(.message-panel) > .section > .back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 18px 9px;
+  color: var(--rn-wa-green-dark);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+main.page-shell:has(.message-panel) > .section > .back-link:hover {
+  text-decoration: underline;
+}
+
+main.page-shell:has(.message-panel) .conversation-page-header {
+  min-height: 82px;
+  margin: 0 !important;
+  padding: 14px clamp(14px, 2vw, 24px) !important;
+  border-top: 1px solid var(--rn-wa-border);
+  border-bottom: 1px solid var(--rn-wa-border);
+  background: var(--rn-wa-toolbar);
+}
+
+main.page-shell:has(.message-panel) .conversation-page-header h1 {
+  margin: 0 0 5px !important;
+  color: var(--rn-wa-text);
+  font-size: clamp(1rem, 1.8vw, 1.2rem) !important;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+main.page-shell:has(.message-panel) .conversation-page-header .eyebrow {
+  margin: 0 0 4px;
+  color: var(--rn-wa-muted);
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+
+main.page-shell:has(.message-panel) .conversation-page-header .muted {
+  margin: 0;
+  color: var(--rn-wa-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+main.page-shell:has(.message-panel) .conversation-page-header img {
+  flex: 0 0 auto;
+  border-color: #d5e1e4 !important;
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 70%);
+}
+
+/* Main chat frame */
+main.page-shell:has(.message-panel) .message-panel {
+  display: flex;
+  flex-direction: column;
+  height: clamp(490px, 70vh, 810px);
+  min-height: 470px;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 0 0 14px 14px !important;
+  background: #f7f9fa;
+  box-shadow: none !important;
+}
+
+main.page-shell:has(.message-panel) .message-panel > p[aria-live="polite"] {
+  flex: 0 0 auto;
+  padding: 8px 18px 3px !important;
+  margin: 0 !important;
+  color: var(--rn-wa-muted) !important;
+  background: var(--rn-wa-toolbar);
+  font-size: 10px !important;
+  letter-spacing: .01em;
+}
+
+main.page-shell:has(.message-panel) .message-panel > div.muted[aria-live="polite"] {
+  flex: 0 0 auto;
+  padding: 3px 18px 10px !important;
+  border-bottom: 1px solid var(--rn-wa-border);
+  color: var(--rn-wa-muted) !important;
+  background: var(--rn-wa-toolbar);
+  font-size: 11px !important;
+}
+
+/* Compact in-chat search bar */
+main.page-shell:has(.message-panel) .message-panel > div:has(> #conversation-message-search) {
+  flex: 0 0 auto;
+  padding: 9px clamp(12px, 2vw, 22px) 8px !important;
+  border-bottom: 1px solid var(--rn-wa-border) !important;
+  background: #f7f9fa;
+}
+
+main.page-shell:has(.message-panel) #conversation-message-search {
+  min-height: 38px !important;
+  padding: 8px 14px !important;
+  border: 1px solid #e0e6e8 !important;
+  border-radius: 20px !important;
+  background: #fff !important;
+  color: var(--rn-wa-text) !important;
+  font-size: 13px;
+  box-shadow: 0 1px 2px rgb(20 40 50 / 3%);
+}
+
+main.page-shell:has(.message-panel) #conversation-message-search:focus {
+  border-color: #88c8ba !important;
+  outline: 2px solid rgb(0 128 105 / 10%);
+}
+
+main.page-shell:has(.message-panel) #conversation-message-search-status {
+  color: var(--rn-wa-muted);
+  font-size: 10px !important;
+}
+
+/* WhatsApp-style conversation wallpaper */
+main.page-shell:has(.message-panel) .message-list {
+  flex: 1 1 auto;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 20px clamp(12px, 3vw, 44px) !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 8px !important;
+  background-color: var(--rn-wa-wallpaper) !important;
+  background-image:
+    radial-gradient(circle at 20% 20%, rgb(90 105 92 / 5%) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 78% 70%, rgb(90 105 92 / 4%) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 40% 85%, rgb(255 255 255 / 28%) 0 2px, transparent 2.5px) !important;
+  background-size: 24px 24px, 31px 31px, 42px 42px !important;
+  scrollbar-color: #c3c8c5 transparent;
+  scrollbar-width: thin;
+}
+
+main.page-shell:has(.message-panel) .message-list > .empty-state {
+  align-self: center;
+  max-width: 420px;
+  margin: auto;
+  padding: 26px 30px;
+  border: 1px solid rgb(220 226 220 / 80%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 86%);
+  box-shadow: 0 3px 12px rgb(40 54 45 / 5%);
+}
+
+main.page-shell:has(.message-panel) .message-list > .empty-state h2 {
+  color: var(--rn-wa-text);
+  font-size: 18px;
+}
+
+/* Incoming and outgoing bubbles */
+main.page-shell:has(.message-panel) .message-bubble {
+  position: relative;
+  width: fit-content;
+  max-width: min(76%, 680px) !important;
+  padding: 9px 11px 8px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  color: var(--rn-wa-text) !important;
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: 0 1px 1px rgb(15 35 43 / 9%);
+  animation: rn-wa-message-in 140ms ease-out both;
+}
+
+main.page-shell:has(.message-panel) .message-own {
+  align-self: flex-end;
+  background: var(--rn-wa-outgoing) !important;
+  border-bottom-right-radius: 3px !important;
+}
+
+main.page-shell:has(.message-panel) .message-other {
+  align-self: flex-start;
+  background: var(--rn-wa-incoming) !important;
+  border-bottom-left-radius: 3px !important;
+}
+
+main.page-shell:has(.message-panel) .message-sender {
+  margin-bottom: 3px !important;
+  color: #526d63 !important;
+  font-size: 11px !important;
+  font-weight: 700;
+}
+
+main.page-shell:has(.message-panel) .message-bubble > p {
+  margin: 0 !important;
+  color: var(--rn-wa-text) !important;
+  font-size: 14px;
+  line-height: 1.45 !important;
+}
+
+main.page-shell:has(.message-panel) .message-bubble time {
+  margin-top: 5px !important;
+  color: #667781 !important;
+  font-size: 10px !important;
+  text-align: right;
+  line-height: 1.2;
+}
+
+main.page-shell:has(.message-panel) .message-own .message-sender {
+  color: #286b5c !important;
+}
+
+/* Reply quote and forwarded-message treatments */
+main.page-shell:has(.message-panel) .message-bubble > div[style*="borderLeft"] {
+  margin: 5px 0 7px !important;
+  padding: 8px 10px !important;
+  border-left: 3px solid #008069 !important;
+  border-radius: 5px !important;
+  background: rgb(0 128 105 / 8%) !important;
+}
+
+main.page-shell:has(.message-panel) .message-own > div[style*="borderLeft"] {
+  background: rgb(0 128 105 / 9%) !important;
+}
+
+/* Reactions, forwarding, reply, edit and delete controls */
+main.page-shell:has(.message-panel) .message-bubble [aria-label="Message reactions"] {
+  gap: 4px !important;
+  margin-top: 6px !important;
+}
+
+main.page-shell:has(.message-panel) .message-bubble [aria-label="Message reactions"] button {
+  min-height: 25px;
+  padding: 3px 7px !important;
+  border: 1px solid rgb(102 119 129 / 20%) !important;
+  border-radius: 14px !important;
+  background: rgb(255 255 255 / 84%) !important;
+  color: #34464e !important;
+  font-size: 12px !important;
+}
+
+main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) {
+  gap: 5px !important;
+  margin-top: 5px !important;
+  opacity: .62;
+  transition: opacity 140ms ease;
+}
+
+main.page-shell:has(.message-panel) .message-bubble:hover > div:last-child:not([aria-label="Message reactions"]),
+main.page-shell:has(.message-panel) .message-bubble:focus-within > div:last-child:not([aria-label="Message reactions"]) {
+  opacity: 1;
+}
+
+main.page-shell:has(.message-panel) .message-bubble > div:last-child button {
+  min-height: 27px;
+  padding: 4px 8px !important;
+  border: 1px solid rgb(102 119 129 / 18%) !important;
+  border-radius: 7px !important;
+  background: rgb(255 255 255 / 86%) !important;
+  color: #34464e !important;
+  font-size: 11px !important;
+}
+
+/* Composer: rounded input and green send action */
+main.page-shell:has(.message-panel) .message-compose {
+  position: relative;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px !important;
+  padding: 12px clamp(10px, 2vw, 18px) !important;
+  border-top: 1px solid var(--rn-wa-border) !important;
+  background: var(--rn-wa-toolbar) !important;
+}
+
+main.page-shell:has(.message-panel) .message-compose > label {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+main.page-shell:has(.message-panel) .message-compose > div[style*="borderLeft"] {
+  flex: 0 0 100%;
+  margin: 0 !important;
+  padding: 9px 12px !important;
+  border: 1px solid #e0e6e8 !important;
+  border-left: 4px solid var(--rn-wa-green) !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+}
+
+main.page-shell:has(.message-panel) .message-compose textarea {
+  flex: 1 1 220px;
+  width: auto !important;
+  min-width: 0;
+  min-height: 46px !important;
+  height: 46px;
+  max-height: 130px;
+  padding: 12px 16px !important;
+  border: 1px solid #e0e6e8 !important;
+  border-radius: 23px !important;
+  background: #fff !important;
+  color: var(--rn-wa-text) !important;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4 !important;
+  resize: vertical;
+  box-shadow: 0 1px 2px rgb(20 40 50 / 4%);
+}
+
+main.page-shell:has(.message-panel) .message-compose textarea:focus {
+  border-color: #8ec9bd !important;
+  outline: 2px solid rgb(0 128 105 / 10%) !important;
+}
+
+main.page-shell:has(.message-panel) .message-compose-footer {
+  flex: 0 0 auto;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  width: auto;
+  margin: 0 !important;
+}
+
+main.page-shell:has(.message-panel) .message-compose-footer > .muted {
+  display: none;
+}
+
+main.page-shell:has(.message-panel) .message-compose-footer button {
+  min-height: 44px;
+  padding: 0 18px !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+  background: var(--rn-wa-green) !important;
+  color: #fff !important;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgb(0 80 62 / 15%);
+}
+
+main.page-shell:has(.message-panel) .message-compose-footer button:hover:not(:disabled) {
+  background: var(--rn-wa-green-dark) !important;
+}
+
+main.page-shell:has(.message-panel) .message-compose-footer button:disabled {
+  opacity: .55;
+}
+
+main.page-shell:has(.message-panel) .alert.alert-error {
+  border-radius: 10px;
+}
+
+/* Conversation list: WhatsApp-style rows */
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) > .section {
+  max-width: 1120px;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-list {
+  gap: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--rn-wa-border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 18px rgb(15 35 43 / 5%);
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-card {
+  min-height: 88px;
+  padding: 14px 18px !important;
+  border: 0 !important;
+  border-bottom: 1px solid #edf0f1 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  transition: background 140ms ease;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-card:last-child {
+  border-bottom: 0 !important;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-card:hover,
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-card[aria-current="page"] {
+  background: #f0f2f5 !important;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-avatar {
+  flex: 0 0 50px;
+  width: 50px;
+  height: 50px;
+  border: 1px solid #dce6e7;
+  background: #dcece8;
+  color: #006b5a;
+  font-weight: 800;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-heading h2 {
+  color: var(--rn-wa-text);
+  font-size: 15px;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-preview {
+  margin: 5px 0 2px;
+  color: #667781;
+  font-size: 13px;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-date {
+  color: #667781;
+  font-size: 11px;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-type {
+  color: #006b5a;
+  background: #e0f2eb;
+  border-radius: 12px;
+}
+
+main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-card button {
+  border-radius: 18px;
+}
+
+@keyframes rn-wa-message-in {
+  from { opacity: .85; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 720px) {
+  main.page-shell:has(.message-panel) {
+    min-height: 0;
+    padding: 8px !important;
+  }
+
+  main.page-shell:has(.message-panel) > .section {
+    border-radius: 12px;
+  }
+
+  main.page-shell:has(.message-panel) .conversation-page-header {
+    min-height: 70px;
+    padding: 12px !important;
+    gap: 10px;
+  }
+
+  main.page-shell:has(.message-panel) .conversation-page-header img {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  main.page-shell:has(.message-panel) .message-panel {
+    height: clamp(420px, 62dvh, 700px);
+    min-height: 420px;
+  }
+
+  main.page-shell:has(.message-panel) .message-list {
+    padding: 13px 9px !important;
+    gap: 7px !important;
+  }
+
+  main.page-shell:has(.message-panel) .message-bubble {
+    max-width: 90% !important;
+    padding: 8px 10px !important;
+    font-size: 13px;
+  }
+
+  main.page-shell:has(.message-panel) .message-bubble > div:last-child:not([aria-label="Message reactions"]) {
+    opacity: 1;
+  }
+
+  main.page-shell:has(.message-panel) .message-compose {
+    padding: 9px !important;
+    gap: 7px !important;
+  }
+
+  main.page-shell:has(.message-panel) .message-compose textarea {
+    flex-basis: 160px;
+    min-height: 44px !important;
+    height: 44px;
+    padding: 11px 13px !important;
+    font-size: 13px;
+  }
+
+  main.page-shell:has(.message-panel) .message-compose-footer button {
+    min-height: 42px;
+    padding: 0 13px !important;
+    font-size: 12px;
+  }
+
+  main.page-shell:has(.conversation-list):not(:has(.message-panel)) > .section {
+    width: 100%;
+  }
+
+  main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-card {
+    padding: 12px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main.page-shell:has(.message-panel) .message-bubble {
+    animation: none;
+  }
+
+  main.page-shell:has(.conversation-list):not(:has(.message-panel)) .conversation-card {
+    transition: none;
+  }
+}
