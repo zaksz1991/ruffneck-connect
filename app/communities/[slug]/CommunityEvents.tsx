@@ -42,6 +42,77 @@ function eventModeLabel(mode: EventMode) {
   return "Online";
 }
 
+function formatIcsUtc(value: string | Date) {
+  return new Date(value)
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
+}
+
+function escapeIcsText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function downloadCalendarInvite(eventItem: CommunityEvent) {
+  const eventPageUrl = new URL(window.location.href);
+  eventPageUrl.hash = `community-event-${eventItem.id}`;
+
+  const start = new Date(eventItem.starts_at);
+  const end = eventItem.ends_at
+    ? new Date(eventItem.ends_at)
+    : new Date(start.getTime() + 60 * 60 * 1000);
+
+  const description = [
+    eventItem.description?.trim() || "",
+    eventItem.meeting_url ? `Meeting link: ${eventItem.meeting_url}` : "",
+    `Community event on RuffNeck Connect: ${eventPageUrl.toString()}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//RuffNeck Connect//Community Events//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${eventItem.id}@ruffneck-connect`,
+    `DTSTAMP:${formatIcsUtc(new Date())}`,
+    `DTSTART:${formatIcsUtc(eventItem.starts_at)}`,
+    `DTEND:${formatIcsUtc(end)}`,
+    `SUMMARY:${escapeIcsText(eventItem.title)}`,
+    `DESCRIPTION:${escapeIcsText(description)}`,
+    `LOCATION:${escapeIcsText(eventItem.location || "")}`,
+    `URL:${eventItem.meeting_url || eventPageUrl.toString()}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+    "",
+  ];
+
+  const blob = new Blob([lines.join("\r\n")], {
+    type: "text/calendar;charset=utf-8",
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  const safeTitle = eventItem.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60) || "community-event";
+
+  anchor.href = objectUrl;
+  anchor.download = `ruffneck-${safeTitle}.ics`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
 export default function CommunityEvents({
   communityId,
   canManage,
@@ -395,7 +466,11 @@ export default function CommunityEvents({
             const isPast = new Date(eventItem.starts_at).getTime() < Date.now();
             const cancelled = eventItem.status === "cancelled";
             return (
-              <article className="feature-card rn-community-event-card" key={eventItem.id}>
+              <article
+                className="feature-card rn-community-event-card"
+                key={eventItem.id}
+                id={`community-event-${eventItem.id}`}
+              >
                 <div className="rn-community-event-card-top">
                   <span className="eyebrow">{eventModeLabel(eventItem.event_mode)}</span>
                   <span className={`status-badge ${cancelled ? "status-pending" : "status-active"}`}>
@@ -422,6 +497,28 @@ export default function CommunityEvents({
                     </button>
                   )}
                   {rsvps[eventItem.id] && <span className="status-badge status-active">RSVP confirmed</span>}
+                  {!cancelled && !isPast && eventItem.status === "scheduled" && (
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      onClick={() => {
+                        try {
+                          downloadCalendarInvite(eventItem);
+                          setError("");
+                          setMessage(
+                            eventItem.ends_at
+                              ? "Calendar invitation downloaded."
+                              : "Calendar invitation downloaded with a one-hour duration."
+                          );
+                        } catch (calendarError) {
+                          console.error("Download event calendar invite failed:", calendarError);
+                          setError("The calendar invitation could not be downloaded. Please try again.");
+                        }
+                      }}
+                    >
+                      Add to calendar
+                    </button>
+                  )}
                   {canManage && !cancelled && eventItem.status === "scheduled" && (
                     <button className="button button-secondary" type="button" onClick={() => void cancelEvent(eventItem)} disabled={busyEventId === eventItem.id}>
                       Cancel event
