@@ -73,6 +73,7 @@ export default async function HomePage() {
     .eq("status", "active");
 
   const activeMemberships = (memberships ?? []) as Membership[];
+
   const communityIds = activeMemberships.map(
     (membership) => membership.community_id
   );
@@ -169,7 +170,9 @@ export default async function HomePage() {
               </div>
 
               <div className="rn-floating-card rn-floating-top">
-                <span className="rn-floating-icon rn-icon-cyan">N</span>
+                <span className="rn-floating-icon rn-icon-cyan">
+                  N
+                </span>
                 <span>
                   <strong>Share a need</strong>
                   <small>Find useful support</small>
@@ -177,7 +180,9 @@ export default async function HomePage() {
               </div>
 
               <div className="rn-floating-card rn-floating-bottom">
-                <span className="rn-floating-icon rn-icon-gold">B</span>
+                <span className="rn-floating-icon rn-icon-gold">
+                  B
+                </span>
                 <span>
                   <strong>Build together</strong>
                   <small>Make ideas happen</small>
@@ -192,12 +197,15 @@ export default async function HomePage() {
                 <span className="rn-stat-icon rn-stat-cyan">C</span>
                 <span className="rn-stat-label">YOUR NETWORK</span>
               </div>
+
               <strong className="rn-stat-number">
                 {activeMemberships.length}
               </strong>
+
               <span className="rn-stat-description">
                 Active communities
               </span>
+
               <Link href="/communities" className="rn-stat-link">
                 Explore communities <span>→</span>
               </Link>
@@ -208,12 +216,15 @@ export default async function HomePage() {
                 <span className="rn-stat-icon rn-stat-purple">O</span>
                 <span className="rn-stat-label">OPPORTUNITIES</span>
               </div>
+
               <strong className="rn-stat-number">
                 {intents.length}
               </strong>
+
               <span className="rn-stat-description">
                 Recently posted open intentions
               </span>
+
               <Link href="/intents" className="rn-stat-link">
                 Browse intentions <span>→</span>
               </Link>
@@ -224,10 +235,13 @@ export default async function HomePage() {
                 <span className="rn-stat-icon rn-stat-gold">NOB</span>
                 <span className="rn-stat-label">GET INVOLVED</span>
               </div>
+
               <strong className="rn-stat-number">3</strong>
+
               <span className="rn-stat-description">
                 Ways to participate
               </span>
+
               <span className="rn-stat-detail">
                 Need · Offer · Build
               </span>
@@ -237,8 +251,12 @@ export default async function HomePage() {
           <section className="rn-section">
             <div className="rn-section-heading">
               <div>
-                <p className="rn-section-kicker">START WITH AN INTENTION</p>
+                <p className="rn-section-kicker">
+                  START WITH AN INTENTION
+                </p>
+
                 <h2>What would you like to do?</h2>
+
                 <p className="rn-section-description">
                   Choose your next step. Every useful connection
                   starts with a clear purpose.
@@ -252,11 +270,14 @@ export default async function HomePage() {
                   <span className="rn-action-letter">N</span>
                   <span className="rn-action-tag">01 / NEED</span>
                 </div>
+
                 <h3>Find the support you need.</h3>
+
                 <p>
                   Describe a challenge, resource gap, or problem
                   you want help solving.
                 </p>
+
                 <Link
                   href="/intents/new?type=need"
                   className="rn-action-link"
@@ -270,11 +291,14 @@ export default async function HomePage() {
                   <span className="rn-action-letter">O</span>
                   <span className="rn-action-tag">02 / OFFER</span>
                 </div>
+
                 <h3>Put your strengths to work.</h3>
+
                 <p>
                   Share your skills, experience, resources, or
                   time with people who can benefit.
                 </p>
+
                 <Link
                   href="/intents/new?type=offer"
                   className="rn-action-link"
@@ -288,11 +312,14 @@ export default async function HomePage() {
                   <span className="rn-action-letter">B</span>
                   <span className="rn-action-tag">03 / BUILD</span>
                 </div>
+
                 <h3>Turn an idea into action.</h3>
+
                 <p>
                   Find collaborators around a project, idea,
                   or shared opportunity.
                 </p>
+
                 <Link
                   href="/intents/new?type=build"
                   className="rn-action-link"
@@ -307,7 +334,9 @@ export default async function HomePage() {
             <div className="rn-section-heading rn-heading-row">
               <div>
                 <p className="rn-section-kicker">YOUR NETWORK</p>
+
                 <h2>My communities</h2>
+
                 <p className="rn-section-description">
                   The groups where shared interests become
                   meaningful collaboration.
@@ -325,11 +354,14 @@ export default async function HomePage() {
             {myCommunities.length === 0 ? (
               <div className="rn-empty">
                 <div className="rn-empty-icon">C</div>
+
                 <h3>Your next community starts here.</h3>
+
                 <p>
                   Discover people who share your interests,
                   professional goals, or local challenges.
                 </p>
+
                 <Link
                   href="/communities"
                   className="rn-button rn-button-primary"
@@ -348,6 +380,7 @@ export default async function HomePage() {
                       <span className="rn-community-number">
                         {String(index + 1).padStart(2, "0")}
                       </span>
+
                       <span className="rn-community-status">
                         <span className="rn-live-dot" />
                         ACTIVE
@@ -390,7 +423,9 @@ export default async function HomePage() {
                 <p className="rn-section-kicker">
                   DISCOVER WHAT IS HAPPENING
                 </p>
+
                 <h2>Open opportunities</h2>
+
                 <p className="rn-section-description">
                   Explore what people need, what they can offer,
                   and what they want to build.
@@ -405,11 +440,16 @@ export default async function HomePage() {
             {intents.length === 0 ? (
               <div className="rn-empty">
                 <div className="rn-empty-icon">↗</div>
-                <h3>Be the first to create an opportunity.</h3>
+
+                <h3>
+                  Be the first to create an opportunity.
+                </h3>
+
                 <p>
                   Share a need, contribute something useful,
                   or invite people to build with you.
                 </p>
+
                 <Link
                   href="/intents/new"
                   className="rn-button rn-button-primary"
@@ -420,7 +460,10 @@ export default async function HomePage() {
             ) : (
               <div className="rn-intent-grid">
                 {intents.map((intent) => (
-                  <article className="rn-intent-card" key={intent.id}>
+                  <article
+                    className="rn-intent-card"
+                    key={intent.id}
+                  >
                     <div className="rn-intent-card-top">
                       <span
                         className={`rn-intent-badge ${intentStyles[intent.intent_type]}`}
@@ -472,7 +515,9 @@ export default async function HomePage() {
               <p className="rn-banner-kicker">
                 YOUR NEXT STEP STARTS HERE
               </p>
+
               <h2>Make your connections count.</h2>
+
               <p>
                 A clear intention can lead to the right person,
                 a useful collaboration, or a practical result.
@@ -486,6 +531,7 @@ export default async function HomePage() {
               >
                 Meet members <span>↗</span>
               </Link>
+
               <Link
                 href="/communities"
                 className="rn-banner-secondary"
@@ -497,7 +543,7 @@ export default async function HomePage() {
         </div>
       </main>
 
-      <style jsx global>{`
+      <style>{`
         .rn-home {
           --rn-navy: #0b1e3a;
           --rn-cyan: #00b4d8;
@@ -1582,7 +1628,10 @@ export default async function HomePage() {
           className="container row"
           style={{ justifyContent: "space-between" }}
         >
-          <span>© {new Date().getFullYear()} RuffNeck Connect</span>
+          <span>
+            © {new Date().getFullYear()} RuffNeck Connect
+          </span>
+
           <Link href="/" className="text-link">
             About RuffNeck Connect
           </Link>
