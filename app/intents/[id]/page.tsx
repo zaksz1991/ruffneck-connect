@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ApproveInterestButton from "./ApproveInterestButton";
 import DeclineInterestButton from "./DeclineInterestButton";
+import WithdrawInterestButton from "./WithdrawInterestButton";
 
 export const dynamic = "force-dynamic";
 
@@ -456,6 +457,19 @@ export default async function IntentDetailsPage({
                         <p className="rn-intent-muted rn-intent-extra-note">
                           Your previous response was declined.
                         </p>
+                      )}
+
+                      {existingInterest.status === "pending" && (
+                        <div className="rn-intent-withdraw-action">
+                          <p className="rn-intent-muted">
+                            Changed your mind? You can withdraw your pending interest request.
+                          </p>
+
+                          <WithdrawInterestButton
+                            intentId={intent.id}
+                            interestId={existingInterest.id}
+                          />
+                        </div>
                       )}
                     </div>
                   ) : (
