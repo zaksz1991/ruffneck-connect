@@ -79,6 +79,7 @@ const MEMBER_ERROR_MESSAGES: Record<string, string> = {
   remove_failed: "The member could not be removed. Check your permissions and try again.",
   invalid_role_change: "The requested role change is invalid.",
   role_change_failed: "The role could not be changed. Only the community owner can change member roles.",
+  join_failed: "We couldn’t submit your membership request. Please refresh and try again.",
 };
 
 export default async function CommunityDetailsPage({
