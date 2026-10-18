@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConversationListFilters from "@/components/ConversationListFilters";
+import MemberConnectionButton from "@/components/MemberConnectionButton";
 
 export const dynamic = "force-dynamic";
 
@@ -84,14 +85,16 @@ export default async function MessagesPage({
 }: PageProps) {
   const params = await searchParams;
   const requestedRecipientId = params.to?.trim() ?? "";
+
   const startError =
     params.start_error === "not_connected"
-      ? "You need an accepted connection to start a private conversation. Open the member profile to send or accept a connection request."
+      ? "An accepted connection is required before you can start a private conversation. Send a connection request or accept the other member's request first."
       : params.start_error === "unavailable"
-        ? "A private conversation could not be opened. Please try again."
+        ? "The private conversation could not be opened. Check the connection status and try again."
         : "";
 
   const supabase = await createClient();
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -125,7 +128,11 @@ export default async function MessagesPage({
       .maybeSingle();
 
     if (error) {
-      console.error("Failed to load message recipient:", error.message);
+      console.error(
+        "Failed to load message recipient:",
+        error.message
+      );
+
       recipientError =
         "The selected member could not be loaded. Please try again.";
     } else if (!recipient) {
@@ -133,7 +140,8 @@ export default async function MessagesPage({
         "This member is unavailable or cannot be contacted.";
     } else {
       recipientName =
-        (recipient as Profile).full_name?.trim() || "RuffNeck member";
+        (recipient as Profile).full_name?.trim() ||
+        "RuffNeck member";
     }
   } else if (requestedRecipientId) {
     recipientError = "The selected member link is invalid.";
@@ -144,7 +152,9 @@ export default async function MessagesPage({
     error: participantError,
   } = await supabase
     .from("conversation_participants")
-    .select("conversation_id, last_read_at, is_pinned, is_archived")
+    .select(
+      "conversation_id, last_read_at, is_pinned, is_archived"
+    )
     .eq("user_id", user.id)
     .eq("status", "active");
 
@@ -180,7 +190,11 @@ export default async function MessagesPage({
   );
 
   const conversationIds = [
-    ...new Set(ownParticipantRecords.map((row) => row.conversation_id)),
+    ...new Set(
+      ownParticipantRecords.map(
+        (row) => row.conversation_id
+      )
+    ),
   ];
 
   let conversations: Conversation[] = [];
@@ -199,14 +213,18 @@ export default async function MessagesPage({
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Failed to load conversations:", error.message);
+      console.error(
+        "Failed to load conversations:",
+        error.message
+      );
     } else {
       conversations = (data ?? []) as Conversation[];
     }
   }
 
-  // Count unread messages per conversation without downloading message bodies.
+  // Count unread messages without downloading their bodies.
   const unreadCountByConversation = new Map<string, number>();
+
   await Promise.all(
     conversations.map(async (conversation) => {
       const lastReadAt =
@@ -215,7 +233,10 @@ export default async function MessagesPage({
 
       const { count, error } = await supabase
         .from("messages")
-        .select("id", { count: "exact", head: true })
+        .select("id", {
+          count: "exact",
+          head: true,
+        })
         .eq("conversation_id", conversation.id)
         .neq("sender_id", user.id)
         .is("deleted_at", null)
@@ -226,15 +247,23 @@ export default async function MessagesPage({
           `Failed to count unread messages for conversation ${conversation.id}:`,
           error.message
         );
-        unreadCountByConversation.set(conversation.id, 0);
+
+        unreadCountByConversation.set(
+          conversation.id,
+          0
+        );
+
         return;
       }
 
-      unreadCountByConversation.set(conversation.id, count ?? 0);
+      unreadCountByConversation.set(
+        conversation.id,
+        count ?? 0
+      );
     })
   );
 
-  // The RPC returns only the participant profile fields permitted for this chat.
+  // Retrieve participant profiles through the secure RPC.
   const participantProfilesByConversation = new Map<
     string,
     ConversationParticipantProfile[]
@@ -244,7 +273,9 @@ export default async function MessagesPage({
     conversations.map(async (conversation) => {
       const { data, error } = await supabase.rpc(
         "get_conversation_participants",
-        { p_conversation_id: conversation.id }
+        {
+          p_conversation_id: conversation.id,
+        }
       );
 
       if (error) {
@@ -252,7 +283,12 @@ export default async function MessagesPage({
           `Failed to load participants for conversation ${conversation.id}:`,
           error.message
         );
-        participantProfilesByConversation.set(conversation.id, []);
+
+        participantProfilesByConversation.set(
+          conversation.id,
+          []
+        );
+
         return;
       }
 
@@ -268,7 +304,10 @@ export default async function MessagesPage({
 
   for (const conversation of conversations) {
     const participants =
-      participantProfilesByConversation.get(conversation.id) ?? [];
+      participantProfilesByConversation.get(
+        conversation.id
+      ) ?? [];
+
     const others = participants.filter(
       (participant) => participant.user_id !== user.id
     );
@@ -281,19 +320,25 @@ export default async function MessagesPage({
     for (const participant of others) {
       profileNames.set(
         participant.user_id,
-        participant.full_name?.trim() || "RuffNeck member"
+        participant.full_name?.trim() ||
+          "RuffNeck member"
       );
     }
   }
 
+  // Find an existing direct conversation with the selected member.
   const existingDirectConversation =
-    requestedRecipientId && isValidUuid(requestedRecipientId)
+    requestedRecipientId &&
+    isValidUuid(requestedRecipientId)
       ? conversations.find((conversation) => {
-          if (conversation.conversation_type !== "direct") {
+          if (
+            conversation.conversation_type !== "direct"
+          ) {
             return false;
           }
 
-          const otherIds = otherParticipantIds.get(conversation.id) ?? [];
+          const otherIds =
+            otherParticipantIds.get(conversation.id) ?? [];
 
           return (
             otherIds.length === 1 &&
@@ -302,80 +347,37 @@ export default async function MessagesPage({
         })
       : undefined;
 
-  async function startDirectConversation(formData: FormData) {
-    "use server";
-
-    const recipientId = String(formData.get("recipient_id") ?? "").trim();
-
-    if (!isValidUuid(recipientId)) {
-      redirect("/messages?start_error=unavailable");
-    }
-
-    const serverSupabase = await createClient();
-    const {
-      data: { user: actor },
-      error: authError,
-    } = await serverSupabase.auth.getUser();
-
-    if (authError || !actor) {
-      redirect(
-        `/login?next=${encodeURIComponent(`/messages?to=${recipientId}`)}`
-      );
-    }
-
-    if (actor.id === recipientId) {
-      redirect("/messages");
-    }
-
-    const { data: conversationId, error: conversationError } =
-      await serverSupabase.rpc("get_or_create_direct_conversation", {
-        p_other_user_id: recipientId,
-      });
-
-    if (
-      conversationError ||
-      typeof conversationId !== "string" ||
-      !isValidUuid(conversationId)
-    ) {
-      const errorMessage = conversationError?.message ?? "";
-      console.error(
-        "Could not start direct conversation:",
-        errorMessage || "Invalid conversation ID returned"
-      );
-
-      const destination = errorMessage.includes(
-        "Accept the connection request before starting a private chat"
-      )
-        ? "not_connected"
-        : "unavailable";
-
-      redirect(
-        `/messages?to=${encodeURIComponent(recipientId)}&start_error=${destination}`
-      );
-    }
-
-    redirect(`/messages/${conversationId}`);
-  }
-
+  // Load the latest message for every conversation.
   let latestMessages: Message[] = [];
 
   if (conversations.length > 0) {
     const { data, error } = await supabase
       .from("messages")
-      .select("conversation_id, body, sender_id, created_at")
+      .select(
+        "conversation_id, body, sender_id, created_at"
+      )
       .in(
         "conversation_id",
-        conversations.map((conversation) => conversation.id)
+        conversations.map(
+          (conversation) => conversation.id
+        )
       )
       .is("deleted_at", null)
-      .order("created_at", { ascending: false });
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (error) {
-      console.error("Failed to load recent messages:", error.message);
+      console.error(
+        "Failed to load recent messages:",
+        error.message
+      );
     } else {
       const seen = new Set<string>();
 
-      latestMessages = ((data ?? []) as Message[]).filter((message) => {
+      latestMessages = (
+        (data ?? []) as Message[]
+      ).filter((message) => {
         if (seen.has(message.conversation_id)) {
           return false;
         }
@@ -387,30 +389,54 @@ export default async function MessagesPage({
   }
 
   const latestMessageByConversation = new Map(
-    latestMessages.map((message) => [message.conversation_id, message])
+    latestMessages.map((message) => [
+      message.conversation_id,
+      message,
+    ])
   );
 
-  const conversationListItems: ConversationListItem[] = conversations.map(
-    (conversation) => {
-      const otherIds = otherParticipantIds.get(conversation.id) ?? [];
+  const conversationListItems: ConversationListItem[] =
+    conversations.map((conversation) => {
+      const otherIds =
+        otherParticipantIds.get(conversation.id) ?? [];
+
       const name =
         conversation.conversation_type === "intent"
           ? conversation.title || "Intent conversation"
           : otherIds
-              .map((id) => profileNames.get(id) ?? "RuffNeck member")
+              .map(
+                (id) =>
+                  profileNames.get(id) ??
+                  "RuffNeck member"
+              )
               .join(", ") || "Direct conversation";
-      const latestMessage = latestMessageByConversation.get(conversation.id);
-      const unreadCount = unreadCountByConversation.get(conversation.id) ?? 0;
+
+      const latestMessage =
+        latestMessageByConversation.get(conversation.id);
+
+      const unreadCount =
+        unreadCountByConversation.get(conversation.id) ??
+        0;
+
       const otherProfiles =
-        participantProfilesByConversation.get(conversation.id)?.filter(
-          (participant) => participant.user_id !== user.id
-        ) ?? [];
+        participantProfilesByConversation
+          .get(conversation.id)
+          ?.filter(
+            (participant) =>
+              participant.user_id !== user.id
+          ) ?? [];
+
       const avatarUrl =
         conversation.conversation_type === "direct"
           ? otherProfiles[0]?.avatar_url ?? null
           : null;
+
       const preview = latestMessage
-        ? `${latestMessage.sender_id === user.id ? "You: " : ""}${latestMessage.body}`
+        ? `${
+            latestMessage.sender_id === user.id
+              ? "You: "
+              : ""
+          }${latestMessage.body}`
         : "No messages yet. Start the conversation.";
 
       return {
@@ -420,31 +446,46 @@ export default async function MessagesPage({
         preview,
         dateLabel: latestMessage
           ? formatDate(latestMessage.created_at)
-          : `Created ${formatDate(conversation.created_at)}`,
-        conversationType: conversation.conversation_type,
+          : `Created ${formatDate(
+              conversation.created_at
+            )}`,
+        conversationType:
+          conversation.conversation_type,
         unreadCount,
-        isPinned: pinnedByConversation.get(conversation.id) ?? false,
-        isArchived: archivedByConversation.get(conversation.id) ?? false,
+        isPinned:
+          pinnedByConversation.get(conversation.id) ??
+          false,
+        isArchived:
+          archivedByConversation.get(conversation.id) ??
+          false,
         avatarUrl,
-        isSelected: conversation.id === existingDirectConversation?.id,
+        isSelected:
+          conversation.id ===
+          existingDirectConversation?.id,
       };
-    }
-  );
+    });
 
   return (
     <main className="page-shell">
       <section className="section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">PRIVATE COMMUNICATION</p>
+            <p className="eyebrow">
+              PRIVATE COMMUNICATION
+            </p>
+
             <h1>Messages</h1>
+
             <p className="muted">
-              Continue conversations with people in your communities and around
-              shared intentions.
+              Continue conversations with people in your
+              communities and around shared intentions.
             </p>
           </div>
 
-          <Link href="/communities" className="button button-secondary">
+          <Link
+            href="/communities"
+            className="button button-secondary"
+          >
             Explore communities
           </Link>
         </div>
@@ -456,83 +497,129 @@ export default async function MessagesPage({
             style={{ marginBottom: "1.5rem" }}
           >
             <h2>Member unavailable</h2>
-            <p className="muted">{recipientError}</p>
-            <Link href="/members" className="button button-secondary">
+
+            <p className="muted">
+              {recipientError}
+            </p>
+
+            <Link
+              href="/members"
+              className="button button-secondary"
+            >
               Return to members
             </Link>
           </div>
         )}
 
-        {requestedRecipientId && !recipientError && recipientName && (
-          <div className="feature-card" style={{ marginBottom: "1.5rem" }}>
-            <p className="eyebrow">SELECTED MEMBER</p>
-            <h2>{recipientName}</h2>
+        {requestedRecipientId &&
+          !recipientError &&
+          recipientName && (
+            <div
+              className="feature-card"
+              style={{ marginBottom: "1.5rem" }}
+            >
+              <p className="eyebrow">
+                SELECTED MEMBER
+              </p>
 
-            {existingDirectConversation ? (
-              <>
-                <p className="muted">
-                  Your direct conversation with this member already exists.
-                </p>
-                <Link
-                  href={`/messages/${existingDirectConversation.id}`}
-                  className="button button-primary"
-                >
-                  Open conversation
-                </Link>
-              </>
-            ) : (
-              <>
-                <p className="muted">
-                  No existing direct conversation was found. You can start one
-                  if your connection with this member has been accepted.
-                </p>
-                {startError && (
-                  <p className="muted" role="alert">
-                    {startError}
+              <h2>{recipientName}</h2>
+
+              {existingDirectConversation ? (
+                <>
+                  <p className="muted">
+                    Your direct conversation with this
+                    member already exists.
                   </p>
-                )}
-                <div className="button-row">
-                  <form action={startDirectConversation}>
-                    <input
-                      type="hidden"
-                      name="recipient_id"
-                      value={requestedRecipientId}
-                    />
-                    <button className="button button-primary" type="submit">
-                      Start private conversation
-                    </button>
-                  </form>
-                  <Link
-                    href={`/members/${requestedRecipientId}`}
-                    className="button button-secondary"
-                  >
-                    View member profile
-                  </Link>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+
+                  <div className="button-row">
+                    <Link
+                      href={`/messages/${existingDirectConversation.id}`}
+                      className="button button-primary"
+                    >
+                      Open conversation
+                    </Link>
+
+                    <Link
+                      href={`/members/${requestedRecipientId}`}
+                      className="button button-secondary"
+                    >
+                      View member profile
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="muted">
+                    Connect with this member to start a
+                    private conversation. If a connection
+                    request is already waiting, you can
+                    accept it here.
+                  </p>
+
+                  {startError && (
+                    <p
+                      className="connection-action-error"
+                      role="alert"
+                    >
+                      {startError}
+                    </p>
+                  )}
+
+                  <MemberConnectionButton
+                    otherUserId={requestedRecipientId}
+                  />
+
+                  <div style={{ marginTop: "1rem" }}>
+                    <Link
+                      href={`/members/${requestedRecipientId}`}
+                      className="button button-secondary"
+                    >
+                      View member profile
+                    </Link>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
         {conversations.length === 0 ? (
           <div className="feature-card empty-state">
             <h2>No conversations yet</h2>
+
             <p className="muted">
-              Join a community to connect with members. You can also respond to
-              an open intention to begin a conversation through a shared
-              purpose.
+              Connect with another member and start a
+              private chat after they accept your request.
+              You can also respond to an open intention to
+              begin a conversation through a shared purpose.
             </p>
+
             <div className="button-row">
-              <Link href="/communities" className="button button-primary">
+              <Link
+                href="/members"
+                className="button button-primary"
+              >
+                Find members
+              </Link>
+
+              <Link
+                href="/communities"
+                className="button button-secondary"
+              >
                 Find communities
               </Link>
-              <Link href="/intents" className="button button-secondary">
+
+              <Link
+                href="/intents"
+                className="button button-secondary"
+              >
                 Discover intentions
               </Link>
             </div>
           </div>
         ) : (
-          <ConversationListFilters items={conversationListItems} />
+          <ConversationListFilters
+            items={conversationListItems}
+          />
         )}
       </section>
     </main>
