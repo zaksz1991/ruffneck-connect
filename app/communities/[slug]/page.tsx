@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import CommunityMembershipRequests from "./CommunityMembershipRequests";
 import CommunityActivityLog from "./CommunityActivityLog";
+import CommunityShareButton from "./CommunityShareButton";
 
 export const dynamic = "force-dynamic";
 
