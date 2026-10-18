@@ -31,22 +31,6 @@ type Message = {
   reply_to?: ReplyPreview | null;
 };
 
-type MessageQueryRow = Omit<Message, "reply_to"> & {
-  reply_to?: ReplyPreview | ReplyPreview[] | null;
-};
-
-function normalizeMessageQueryRow(row: unknown): Message {
-  const message = row as MessageQueryRow;
-  const replyTo = Array.isArray(message.reply_to)
-    ? message.reply_to[0] ?? null
-    : message.reply_to ?? null;
-
-  return {
-    ...message,
-    reply_to: replyTo,
-  };
-}
-
 type MessageReaction = {
   message_id: string;
   user_id: string;
@@ -127,6 +111,16 @@ function formatDate(value: string) {
   }).format(date);
 }
 
+function getReactionRowKey(
+  reaction: Pick<MessageReaction, "message_id" | "user_id" | "emoji">
+) {
+  return JSON.stringify([
+    reaction.message_id,
+    reaction.user_id,
+    reaction.emoji,
+  ]);
+}
+
 export default function ConversationMessages({
   conversationId,
   currentUserId,
@@ -134,89 +128,145 @@ export default function ConversationMessages({
   participants,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
+
   const [messages, setMessages] = useState<Message[]>(() =>
     sortAndLimit(initialMessages)
   );
+
   const [messageSearch, setMessageSearch] = useState("");
+
   const filteredMessages = useMemo(() => {
     const query = messageSearch.trim().toLocaleLowerCase();
+
     if (!query) return messages;
+
     return messages.filter((message) =>
       message.body.toLocaleLowerCase().includes(query)
     );
   }, [messages, messageSearch]);
+
   const [draft, setDraft] = useState("");
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const replyingToRef = useRef<Message | null>(null);
+
   replyingToRef.current = replyingTo;
+
   const [sending, setSending] = useState(false);
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(
+    null
+  );
   const [editDraft, setEditDraft] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
-  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(
+    null
+  );
   const [reactionRows, setReactionRows] = useState<MessageReaction[]>([]);
-  const [togglingReactionKey, setTogglingReactionKey] = useState<string | null>(null);
+  const [togglingReactionKey, setTogglingReactionKey] = useState<string | null>(
+    null
+  );
   const [error, setError] = useState("");
+
   const [realtimeStatus, setRealtimeStatus] = useState<
     "Connecting" | "Connected" | "Reconnecting"
   >("Connecting");
+
   const [presenceStatus, setPresenceStatus] = useState<
     "Connecting" | "Connected" | "Reconnecting"
   >("Connecting");
+
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
+
   const [hasMoreMessages, setHasMoreMessages] = useState(
     initialMessages.length >= 200
   );
+
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+
   const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
   const pendingOlderScroll = useRef<{
     scrollHeight: number;
     scrollTop: number;
   } | null>(null);
+
   const shouldAutoScroll = useRef(true);
-  const reactionOverrides = useRef(new Map<string, MessageReaction | null>());
-  // Shared between Realtime callbacks and explicit edit/delete actions so a
-  // stale initial snapshot cannot overwrite a newer local change.
+
+  const reactionOverrides = useRef(
+    new Map<string, MessageReaction | null>()
+  );
+
   const liveOverridesRef = useRef(new Map<string, Message | null>());
+
   const visibleMessageIds = useMemo(
     () => messages.map((message) => message.id),
     [messages]
   );
+
   const visibleMessageIdsKey = visibleMessageIds.join(",");
-  const visibleMessageIdsRef = useRef<Set<string>>(new Set(visibleMessageIds));
+
+  const visibleMessageIdsRef = useRef<Set<string>>(
+    new Set(visibleMessageIds)
+  );
+
   visibleMessageIdsRef.current = new Set(visibleMessageIds);
-  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const presenceChannelRef = useRef<
+    ReturnType<typeof supabase.channel> | null
+  >(null);
+
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+
   const remoteTypingTimersRef = useRef(
     new Map<string, ReturnType<typeof setTimeout>>()
   );
+
   const lastTypingBroadcastAtRef = useRef(0);
   const typingSignalActiveRef = useRef(false);
+
   const participantIdsKey = useMemo(
-    () => [...new Set(participants.map((participant) => participant.user_id))].sort().join(","),
+    () =>
+      [
+        ...new Set(participants.map((participant) => participant.user_id)),
+      ]
+        .sort()
+        .join(","),
     [participants]
   );
 
   const reactionSummaries = useMemo(() => {
-    const summaries = new Map<string, { count: number; reactedByMe: boolean }>();
+    const summaries = new Map<
+      string,
+      { count: number; reactedByMe: boolean }
+    >();
+
     for (const reaction of reactionRows) {
       const key = `${reaction.message_id}|${reaction.emoji}`;
-      const existing = summaries.get(key) ?? { count: 0, reactedByMe: false };
+
+      const existing = summaries.get(key) ?? {
+        count: 0,
+        reactedByMe: false,
+      };
+
       existing.count += 1;
-      if (reaction.user_id === currentUserId) existing.reactedByMe = true;
+
+      if (reaction.user_id === currentUserId) {
+        existing.reactedByMe = true;
+      }
+
       summaries.set(key, existing);
     }
+
     return summaries;
   }, [reactionRows, currentUserId]);
 
-  function getReactionRowKey(reaction: Pick<MessageReaction, "message_id" | "user_id" | "emoji">) {
-    return JSON.stringify([reaction.message_id, reaction.user_id, reaction.emoji]);
-  }
-
   async function hydrateReplyPreview(message: Message): Promise<Message> {
-    if (!message.reply_to_message_id || message.reply_to) return message;
+    if (!message.reply_to_message_id || message.reply_to) {
+      return message;
+    }
 
     const { data, error: replyError } = await supabase
       .from("messages")
@@ -224,14 +274,75 @@ export default function ConversationMessages({
       .eq("id", message.reply_to_message_id)
       .maybeSingle();
 
-    if (replyError || !data) return message;
-    return { ...message, reply_to: data as ReplyPreview };
+    if (replyError || !data) {
+      return message;
+    }
+
+    return {
+      ...message,
+      reply_to: data as ReplyPreview,
+    };
+  }
+
+  async function hydrateReplyPreviews(
+    incomingMessages: Message[]
+  ): Promise<Message[]> {
+    const targetIds = [
+      ...new Set(
+        incomingMessages
+          .filter(
+            (message) =>
+              message.reply_to_message_id && !message.reply_to
+          )
+          .map((message) => message.reply_to_message_id as string)
+      ),
+    ];
+
+    if (targetIds.length === 0) {
+      return incomingMessages;
+    }
+
+    const { data, error: replyError } = await supabase
+      .from("messages")
+      .select("id, sender_id, body, deleted_at")
+      .in("id", targetIds);
+
+    if (replyError || !data) {
+      if (replyError) {
+        console.error(
+          "Unable to load reply previews:",
+          replyError.message
+        );
+      }
+
+      return incomingMessages;
+    }
+
+    const replyMap = new Map<string, ReplyPreview>();
+
+    for (const row of data as ReplyPreview[]) {
+      replyMap.set(row.id, row);
+    }
+
+    return incomingMessages.map((message) => {
+      if (!message.reply_to_message_id || message.reply_to) {
+        return message;
+      }
+
+      return {
+        ...message,
+        reply_to:
+          replyMap.get(message.reply_to_message_id) ?? null,
+      };
+    });
   }
 
   function beginReply(message: Message) {
     if (message.deleted_at || deletingMessageId) return;
+
     setError("");
     setReplyingTo(message);
+
     window.setTimeout(() => {
       document.getElementById("message-body")?.focus();
     }, 0);
@@ -239,12 +350,14 @@ export default function ConversationMessages({
 
   useEffect(() => {
     let cancelled = false;
+
     const messageIds = visibleMessageIdsKey
       ? visibleMessageIdsKey.split(",")
       : [];
 
     if (messageIds.length === 0) {
       setReactionRows([]);
+
       return () => {
         cancelled = true;
       };
@@ -257,29 +370,39 @@ export default function ConversationMessages({
         .in("message_id", messageIds);
 
       if (cancelled) return;
+
       if (reactionLoadError) {
-        console.error("Unable to load message reactions:", reactionLoadError.message);
+        console.error(
+          "Unable to load message reactions:",
+          reactionLoadError.message
+        );
         return;
       }
 
       const byKey = new Map<string, MessageReaction>();
+
       for (const row of (data ?? []) as MessageReaction[]) {
         byKey.set(getReactionRowKey(row), row);
       }
 
       const visibleIds = new Set(messageIds);
+
       for (const [key, override] of reactionOverrides.current.entries()) {
-        if (!override || !visibleIds.has(override.message_id)) {
-          if (override === null) byKey.delete(key);
+        if (override === null) {
+          byKey.delete(key);
           continue;
         }
-        if (visibleIds.has(override.message_id)) byKey.set(key, override);
+
+        if (override && visibleIds.has(override.message_id)) {
+          byKey.set(key, override);
+        }
       }
 
       setReactionRows([...byKey.values()]);
     }
 
     void loadReactions();
+
     return () => {
       cancelled = true;
     };
@@ -288,16 +411,16 @@ export default function ConversationMessages({
   useEffect(() => {
     let disposed = false;
 
-    // Records received after subscribing take precedence over the first
-    // snapshot, covering changes that happen while that snapshot is loading.
     const liveOverrides = liveOverridesRef.current;
     liveOverrides.clear();
 
     async function refreshMessages() {
+      // Deliberately avoid a PostgREST self-join. Reply previews are fetched
+      // separately to avoid depending on relationship-cache resolution.
       const { data, error: loadError } = await supabase
         .from("messages")
         .select(
-          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, forwarded_from_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
+          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, forwarded_from_message_id"
         )
         .eq("conversation_id", conversationId)
         .is("deleted_at", null)
@@ -308,25 +431,32 @@ export default function ConversationMessages({
       if (disposed) return;
 
       if (loadError) {
-        console.error("Unable to refresh conversation messages:", loadError.message);
+        console.error(
+          "Unable to refresh conversation messages:",
+          loadError.message
+        );
         return;
       }
 
-      const latestRows = (data ?? []).map(normalizeMessageQueryRow).reverse();
+      const latestRows = ((data ?? []) as Message[]).reverse();
+      const hydratedRows = await hydrateReplyPreviews(latestRows);
+
+      if (disposed) return;
 
       if (latestRows.length < 200) {
         setHasMoreMessages(false);
       }
 
-      // Keep any earlier pages the user has already loaded. A refresh should
-      // update the latest snapshot, not replace the entire visible history.
       setMessages((current) => {
         const byId = new Map<string, Message>(
           current.map((message) => [message.id, message])
         );
 
-        for (const message of latestRows) {
-          byId.set(message.id, message);
+        for (const message of hydratedRows) {
+          byId.set(message.id, {
+            ...byId.get(message.id),
+            ...message,
+          });
         }
 
         for (const [messageId, message] of liveOverrides.entries()) {
@@ -359,7 +489,6 @@ export default function ConversationMessages({
       }
     }
 
-    // Opening a conversation marks currently visible messages as read.
     void markConversationRead();
 
     const handleVisibilityChange = () => {
@@ -367,7 +496,11 @@ export default function ConversationMessages({
         void markConversationRead();
       }
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
 
     const channel = supabase
       .channel(`conversation-messages-${conversationId}-${currentUserId}`)
@@ -381,24 +514,35 @@ export default function ConversationMessages({
         },
         (payload) => {
           const incoming = payload.new as unknown as Message;
+
           if (!incoming.id || incoming.deleted_at) return;
 
           const list = listRef.current;
+
           const distanceFromBottom = list
             ? list.scrollHeight - list.scrollTop - list.clientHeight
             : 0;
+
           shouldAutoScroll.current =
-            incoming.sender_id === currentUserId || distanceFromBottom < 160;
+            incoming.sender_id === currentUserId ||
+            distanceFromBottom < 160;
 
           liveOverrides.set(incoming.id, incoming);
+
           setMessages((current) => mergeMessages(current, [incoming]));
+
           if (incoming.reply_to_message_id) {
             void hydrateReplyPreview(incoming).then((hydrated) => {
               if (disposed) return;
+
               liveOverrides.set(hydrated.id, hydrated);
-              setMessages((current) => mergeMessages(current, [hydrated]));
+
+              setMessages((current) =>
+                mergeMessages(current, [hydrated])
+              );
             });
           }
+
           if (incoming.sender_id !== currentUserId) {
             void markConversationRead();
           }
@@ -414,19 +558,23 @@ export default function ConversationMessages({
         },
         (payload) => {
           const updated = payload.new as unknown as Message;
+
           if (!updated.id) return;
 
           if (updated.deleted_at) {
             liveOverrides.set(updated.id, null);
+
             if (replyingToRef.current?.id === updated.id) {
               setReplyingTo(null);
             }
+
             const deletedTarget: ReplyPreview = {
               id: updated.id,
               sender_id: updated.sender_id,
               body: updated.body,
               deleted_at: updated.deleted_at,
             };
+
             setMessages((current) =>
               current
                 .filter((message) => message.id !== updated.id)
@@ -436,19 +584,25 @@ export default function ConversationMessages({
                     : message
                 )
             );
+
             setReactionRows((current) =>
-              current.filter((reaction) => reaction.message_id !== updated.id)
+              current.filter(
+                (reaction) => reaction.message_id !== updated.id
+              )
             );
+
             return;
           }
 
           liveOverrides.set(updated.id, updated);
+
           const updatedReplySource: ReplyPreview = {
             id: updated.id,
             sender_id: updated.sender_id,
             body: updated.body,
             deleted_at: updated.deleted_at ?? null,
           };
+
           setMessages((current) =>
             mergeMessages(
               current.map((message) =>
@@ -470,10 +624,17 @@ export default function ConversationMessages({
         },
         (payload) => {
           const incoming = payload.new as unknown as MessageReaction;
-          if (!incoming.message_id || !visibleMessageIdsRef.current.has(incoming.message_id)) return;
+
+          if (
+            !incoming.message_id ||
+            !visibleMessageIdsRef.current.has(incoming.message_id)
+          ) {
+            return;
+          }
 
           const key = getReactionRowKey(incoming);
           reactionOverrides.current.set(key, incoming);
+
           setReactionRows((current) =>
             current.some((row) => getReactionRowKey(row) === key)
               ? current
@@ -490,13 +651,28 @@ export default function ConversationMessages({
         },
         (payload) => {
           const removed = payload.old as unknown as MessageReaction;
-          if (!removed.message_id || !removed.user_id || !removed.emoji) return;
-          if (!visibleMessageIdsRef.current.has(removed.message_id)) return;
+
+          if (
+            !removed.message_id ||
+            !removed.user_id ||
+            !removed.emoji
+          ) {
+            return;
+          }
+
+          if (
+            !visibleMessageIdsRef.current.has(removed.message_id)
+          ) {
+            return;
+          }
 
           const key = getReactionRowKey(removed);
           reactionOverrides.current.set(key, null);
+
           setReactionRows((current) =>
-            current.filter((row) => getReactionRowKey(row) !== key)
+            current.filter(
+              (row) => getReactionRowKey(row) !== key
+            )
           );
         }
       )
@@ -520,31 +696,45 @@ export default function ConversationMessages({
 
     return () => {
       disposed = true;
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+
       void supabase.removeChannel(channel);
     };
   }, [conversationId, currentUserId, supabase]);
 
   useEffect(() => {
     let disposed = false;
+
     const participantIds = new Set(
       participantIdsKey.split(",").filter(Boolean)
     );
+
     const remoteTypingTimers = remoteTypingTimersRef.current;
 
-    // Presence and typing use a private channel whose topic is authorized by
-    // supabase/migrations/202610160004_conversation_presence_typing.sql.
-    const channel = supabase.channel(`conversation-presence:${conversationId}`, {
-      config: {
-        private: true,
-        presence: { key: currentUserId },
-      },
-    });
+    const channel = supabase.channel(
+      `conversation-presence:${conversationId}`,
+      {
+        config: {
+          private: true,
+          presence: { key: currentUserId },
+        },
+      }
+    );
+
     presenceChannelRef.current = channel;
 
     const syncPresence = () => {
       if (disposed) return;
-      const state = channel.presenceState<{ user_id?: string; online_at?: string }>();
+
+      const state = channel.presenceState<{
+        user_id?: string;
+        online_at?: string;
+      }>();
+
       const onlineIds = Object.entries(state)
         .filter(
           ([userId, metas]) =>
@@ -554,6 +744,7 @@ export default function ConversationMessages({
             metas.length > 0
         )
         .map(([userId]) => userId);
+
       setOnlineUserIds(onlineIds);
     };
 
@@ -562,9 +753,16 @@ export default function ConversationMessages({
       .on("presence", { event: "join" }, syncPresence)
       .on("presence", { event: "leave" }, syncPresence)
       .on("broadcast", { event: "typing" }, ({ payload }) => {
-        if (disposed || !payload || typeof payload.user_id !== "string") return;
+        if (
+          disposed ||
+          !payload ||
+          typeof payload.user_id !== "string"
+        ) {
+          return;
+        }
 
         const typingUserId = payload.user_id as string;
+
         if (
           typingUserId === currentUserId ||
           !participantIds.has(typingUserId)
@@ -573,23 +771,32 @@ export default function ConversationMessages({
         }
 
         const existingTimer = remoteTypingTimers.get(typingUserId);
-        if (existingTimer) clearTimeout(existingTimer);
+
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
 
         if (payload.is_typing !== true) {
           remoteTypingTimers.delete(typingUserId);
+
           setTypingUserIds((current) =>
             current.filter((userId) => userId !== typingUserId)
           );
+
           return;
         }
 
         setTypingUserIds((current) =>
-          current.includes(typingUserId) ? current : [...current, typingUserId]
+          current.includes(typingUserId)
+            ? current
+            : [...current, typingUserId]
         );
+
         remoteTypingTimers.set(
           typingUserId,
           setTimeout(() => {
             remoteTypingTimers.delete(typingUserId);
+
             setTypingUserIds((current) =>
               current.filter((userId) => userId !== typingUserId)
             );
@@ -601,10 +808,12 @@ export default function ConversationMessages({
 
         if (status === "SUBSCRIBED") {
           setPresenceStatus("Connected");
+
           void channel.track({
             user_id: currentUserId,
             online_at: new Date().toISOString(),
           });
+
           syncPresence();
         } else if (
           status === "CHANNEL_ERROR" ||
@@ -621,18 +830,26 @@ export default function ConversationMessages({
 
     return () => {
       disposed = true;
+
       if (typingStopTimerRef.current) {
         clearTimeout(typingStopTimerRef.current);
         typingStopTimerRef.current = null;
       }
-      for (const timer of remoteTypingTimers.values()) clearTimeout(timer);
+
+      for (const timer of remoteTypingTimers.values()) {
+        clearTimeout(timer);
+      }
+
       remoteTypingTimers.clear();
       typingSignalActiveRef.current = false;
+
       if (presenceChannelRef.current === channel) {
         presenceChannelRef.current = null;
       }
+
       setOnlineUserIds([]);
       setTypingUserIds([]);
+
       void supabase.removeChannel(channel);
     };
   }, [conversationId, currentUserId, participantIdsKey, supabase]);
@@ -643,9 +860,11 @@ export default function ConversationMessages({
 
     if (list && previousScroll) {
       pendingOlderScroll.current = null;
+
       list.scrollTop =
         previousScroll.scrollTop +
         (list.scrollHeight - previousScroll.scrollHeight);
+
       return;
     }
 
@@ -654,27 +873,34 @@ export default function ConversationMessages({
         behavior: "smooth",
         block: "end",
       });
+
       shouldAutoScroll.current = false;
     }
   }, [messages]);
 
   async function loadOlderMessages() {
-    if (loadingOlderMessages || !hasMoreMessages || messages.length === 0) {
+    if (
+      loadingOlderMessages ||
+      !hasMoreMessages ||
+      messages.length === 0
+    ) {
       return;
     }
 
     const oldestMessage = messages[0];
     const list = listRef.current;
+
     if (!oldestMessage || !list) return;
 
     setLoadingOlderMessages(true);
     setError("");
 
     try {
+      // No self-join here either. Reply previews are hydrated separately.
       const { data, error: historyError } = await supabase
         .from("messages")
         .select(
-          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, forwarded_from_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
+          "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, forwarded_from_message_id"
         )
         .eq("conversation_id", conversationId)
         .is("deleted_at", null)
@@ -689,19 +915,26 @@ export default function ConversationMessages({
         throw new Error(historyError.message);
       }
 
-      const olderMessages = (data ?? []).map(normalizeMessageQueryRow).reverse();
+      const olderMessages = ((data ?? []) as Message[]).reverse();
 
       if (olderMessages.length === 0) {
         setHasMoreMessages(false);
         return;
       }
 
+      const hydratedOlderMessages =
+        await hydrateReplyPreviews(olderMessages);
+
       pendingOlderScroll.current = {
         scrollHeight: list.scrollHeight,
         scrollTop: list.scrollTop,
       };
+
       shouldAutoScroll.current = false;
-      setMessages((current) => mergeMessages(olderMessages, current));
+
+      setMessages((current) =>
+        mergeMessages(hydratedOlderMessages, current)
+      );
 
       if (olderMessages.length < 50) {
         setHasMoreMessages(false);
@@ -735,8 +968,11 @@ export default function ConversationMessages({
     const body = editDraft.trim();
 
     if (!messageId || savingEdit) return;
+
     if (!body || body.length > 5000) {
-      setError("Edited messages must contain between 1 and 5,000 characters.");
+      setError(
+        "Edited messages must contain between 1 and 5,000 characters."
+      );
       return;
     }
 
@@ -744,25 +980,37 @@ export default function ConversationMessages({
     setError("");
 
     try {
-      const response = await fetch(`/api/messages/${conversationId}/edit`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId, body }),
-      });
+      const response = await fetch(
+        `/api/messages/${conversationId}/edit`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId, body }),
+        }
+      );
+
       const result = (await response.json()) as EditResponse;
 
       if (!response.ok || !result.message) {
-        throw new Error(result.error || "Unable to edit this message.");
+        throw new Error(
+          result.error || "Unable to edit this message."
+        );
       }
 
       const updatedMessage = result.message as Message;
-      liveOverridesRef.current.set(updatedMessage.id, updatedMessage);
+
+      liveOverridesRef.current.set(
+        updatedMessage.id,
+        updatedMessage
+      );
+
       const updatedReplySource: ReplyPreview = {
         id: updatedMessage.id,
         sender_id: updatedMessage.sender_id,
         body: updatedMessage.body,
         deleted_at: updatedMessage.deleted_at ?? null,
       };
+
       setMessages((current) =>
         mergeMessages(
           current.map((message) =>
@@ -773,6 +1021,7 @@ export default function ConversationMessages({
           [updatedMessage]
         )
       );
+
       setEditingMessageId(null);
       setEditDraft("");
     } catch (editError) {
@@ -792,26 +1041,40 @@ export default function ConversationMessages({
     const confirmed = window.confirm(
       "Delete this message? It will be hidden from the conversation."
     );
+
     if (!confirmed) return;
 
     setDeletingMessageId(messageId);
     setError("");
 
     try {
-      const response = await fetch(`/api/messages/${conversationId}/delete`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId }),
-      });
+      const response = await fetch(
+        `/api/messages/${conversationId}/delete`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId }),
+        }
+      );
+
       const result = (await response.json()) as DeleteResponse;
 
       if (!response.ok || !result.deleted) {
-        throw new Error(result.error || "Unable to delete this message.");
+        throw new Error(
+          result.error || "Unable to delete this message."
+        );
       }
 
       liveOverridesRef.current.set(messageId, null);
-      const deletedTarget = messages.find((message) => message.id === messageId);
-      if (replyingTo?.id === messageId) setReplyingTo(null);
+
+      const deletedTarget = messages.find(
+        (message) => message.id === messageId
+      );
+
+      if (replyingTo?.id === messageId) {
+        setReplyingTo(null);
+      }
+
       setMessages((current) =>
         current
           .filter((message) => message.id !== messageId)
@@ -830,7 +1093,9 @@ export default function ConversationMessages({
           )
       );
 
-      if (editingMessageId === messageId) cancelEdit();
+      if (editingMessageId === messageId) {
+        cancelEdit();
+      }
     } catch (deleteError) {
       setError(
         deleteError instanceof Error
@@ -842,14 +1107,19 @@ export default function ConversationMessages({
     }
   }
 
-  async function toggleReaction(messageId: string, emoji: ReactionEmoji) {
+  async function toggleReaction(
+    messageId: string,
+    emoji: ReactionEmoji
+  ) {
     const existing = reactionRows.find(
       (reaction) =>
         reaction.message_id === messageId &&
         reaction.user_id === currentUserId &&
         reaction.emoji === emoji
     );
+
     const toggleKey = `${messageId}|${emoji}`;
+
     if (togglingReactionKey) return;
 
     setTogglingReactionKey(toggleKey);
@@ -864,11 +1134,20 @@ export default function ConversationMessages({
           .eq("user_id", currentUserId)
           .eq("emoji", emoji);
 
-        if (deleteError) throw new Error(deleteError.message);
+        if (deleteError) {
+          throw new Error(deleteError.message);
+        }
 
-        reactionOverrides.current.set(getReactionRowKey(existing), null);
+        reactionOverrides.current.set(
+          getReactionRowKey(existing),
+          null
+        );
+
         setReactionRows((current) =>
-          current.filter((row) => getReactionRowKey(row) !== getReactionRowKey(existing))
+          current.filter(
+            (row) =>
+              getReactionRowKey(row) !== getReactionRowKey(existing)
+          )
         );
       } else {
         const { data, error: insertError } = await supabase
@@ -881,12 +1160,21 @@ export default function ConversationMessages({
           .select("message_id, user_id, emoji, created_at")
           .single();
 
-        if (insertError) throw new Error(insertError.message);
-        if (!data) throw new Error("The reaction was not saved. Please try again.");
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
+
+        if (!data) {
+          throw new Error(
+            "The reaction was not saved. Please try again."
+          );
+        }
 
         const reaction = data as MessageReaction;
         const key = getReactionRowKey(reaction);
+
         reactionOverrides.current.set(key, reaction);
+
         setReactionRows((current) =>
           current.some((row) => getReactionRowKey(row) === key)
             ? current
@@ -906,18 +1194,26 @@ export default function ConversationMessages({
 
   function sendTypingSignal(isTyping: boolean) {
     const channel = presenceChannelRef.current;
+
     if (!channel) return;
 
     if (isTyping) {
       const now = Date.now();
-      if (now - lastTypingBroadcastAtRef.current < 700) return;
+
+      if (now - lastTypingBroadcastAtRef.current < 700) {
+        return;
+      }
+
       lastTypingBroadcastAtRef.current = now;
     }
 
     void channel.send({
       type: "broadcast",
       event: "typing",
-      payload: { user_id: currentUserId, is_typing: isTyping },
+      payload: {
+        user_id: currentUserId,
+        is_typing: isTyping,
+      },
     });
   }
 
@@ -926,12 +1222,17 @@ export default function ConversationMessages({
       clearTimeout(typingStopTimerRef.current);
       typingStopTimerRef.current = null;
     }
-    if (typingSignalActiveRef.current) sendTypingSignal(false);
+
+    if (typingSignalActiveRef.current) {
+      sendTypingSignal(false);
+    }
+
     typingSignalActiveRef.current = false;
   }
 
   function handleDraftChange(value: string) {
     setDraft(value);
+
     if (typingStopTimerRef.current) {
       clearTimeout(typingStopTimerRef.current);
       typingStopTimerRef.current = null;
@@ -944,8 +1245,12 @@ export default function ConversationMessages({
 
     typingSignalActiveRef.current = true;
     sendTypingSignal(true);
+
     typingStopTimerRef.current = setTimeout(() => {
-      if (typingSignalActiveRef.current) sendTypingSignal(false);
+      if (typingSignalActiveRef.current) {
+        sendTypingSignal(false);
+      }
+
       typingSignalActiveRef.current = false;
       typingStopTimerRef.current = null;
     }, 1600);
@@ -953,6 +1258,7 @@ export default function ConversationMessages({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     const body = draft.trim();
 
     if (!body || sending) return;
@@ -966,26 +1272,36 @@ export default function ConversationMessages({
     setError("");
 
     try {
-      const response = await fetch(`/api/messages/${conversationId}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          body,
-          replyToMessageId: replyingTo?.id ?? null,
-        }),
-      });
+      const response = await fetch(
+        `/api/messages/${conversationId}/send`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body,
+            replyToMessageId: replyingTo?.id ?? null,
+          }),
+        }
+      );
 
       const result = (await response.json()) as SendResponse;
 
       if (!response.ok || !result.message) {
-        throw new Error(result.error || "Unable to send your message.");
+        throw new Error(
+          result.error || "Unable to send your message."
+        );
       }
 
-      // Realtime and the HTTP response can race; merge by message ID to avoid
-      // displaying the same message twice.
       shouldAutoScroll.current = true;
-      const messageWithReply = await hydrateReplyPreview(result.message as Message);
-      setMessages((current) => mergeMessages(current, [messageWithReply]));
+
+      const messageWithReply = await hydrateReplyPreview(
+        result.message as Message
+      );
+
+      setMessages((current) =>
+        mergeMessages(current, [messageWithReply])
+      );
+
       stopTyping();
       setDraft("");
       setReplyingTo(null);
@@ -1003,22 +1319,39 @@ export default function ConversationMessages({
   const otherParticipants = participants.filter(
     (participant) => participant.user_id !== currentUserId
   );
+
   const onlineParticipantNames = otherParticipants
-    .filter((participant) => onlineUserIds.includes(participant.user_id))
-    .map((participant) => participant.full_name?.trim() || "RuffNeck member");
+    .filter((participant) =>
+      onlineUserIds.includes(participant.user_id)
+    )
+    .map(
+      (participant) =>
+        participant.full_name?.trim() || "RuffNeck member"
+    );
+
   const typingParticipantNames = otherParticipants
-    .filter((participant) => typingUserIds.includes(participant.user_id))
-    .map((participant) => participant.full_name?.trim() || "A participant");
+    .filter((participant) =>
+      typingUserIds.includes(participant.user_id)
+    )
+    .map(
+      (participant) =>
+        participant.full_name?.trim() || "A participant"
+    );
 
   return (
     <div className="message-panel">
       <p
         className="muted"
         aria-live="polite"
-        style={{ padding: "12px 24px 0", marginBottom: 0, fontSize: 12 }}
+        style={{
+          padding: "12px 24px 0",
+          marginBottom: 0,
+          fontSize: 12,
+        }}
       >
         Live updates: {realtimeStatus} · Presence: {presenceStatus}
       </p>
+
       <div
         className="muted"
         aria-live="polite"
@@ -1036,7 +1369,9 @@ export default function ConversationMessages({
             <span
               aria-hidden="true"
               style={{
-                color: onlineParticipantNames.length ? "#16a34a" : "#9ca3af",
+                color: onlineParticipantNames.length
+                  ? "#16a34a"
+                  : "#9ca3af",
                 marginRight: 5,
               }}
             >
@@ -1049,9 +1384,11 @@ export default function ConversationMessages({
                 : "Other participants not active here"}
           </span>
         )}
+
         {typingParticipantNames.length > 0 && (
           <span>
-            {typingParticipantNames.join(", ")} {typingParticipantNames.length === 1 ? "is" : "are"} typing…
+            {typingParticipantNames.join(", ")}{" "}
+            {typingParticipantNames.length === 1 ? "is" : "are"} typing…
           </span>
         )}
       </div>
@@ -1065,16 +1402,29 @@ export default function ConversationMessages({
         <label
           htmlFor="conversation-message-search"
           className="muted"
-          style={{ display: "block", fontSize: 12, marginBottom: 6 }}
+          style={{
+            display: "block",
+            fontSize: 12,
+            marginBottom: 6,
+          }}
         >
           Search messages
         </label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
           <input
             id="conversation-message-search"
             type="search"
             value={messageSearch}
-            onChange={(event) => setMessageSearch(event.target.value)}
+            onChange={(event) =>
+              setMessageSearch(event.target.value)
+            }
             placeholder="Find words in this conversation…"
             maxLength={120}
             aria-describedby="conversation-message-search-status"
@@ -1090,27 +1440,41 @@ export default function ConversationMessages({
               color: "inherit",
             }}
           />
+
           {messageSearch && (
             <button
               type="button"
               className="button-secondary"
               onClick={() => setMessageSearch("")}
-              style={{ padding: "7px 10px", whiteSpace: "nowrap" }}
+              style={{
+                padding: "7px 10px",
+                whiteSpace: "nowrap",
+              }}
             >
               Clear
             </button>
           )}
         </div>
+
         <p
           id="conversation-message-search-status"
           className="muted"
           aria-live="polite"
-          style={{ fontSize: 12, margin: "6px 0 0" }}
+          style={{
+            fontSize: 12,
+            margin: "6px 0 0",
+          }}
         >
           {messageSearch.trim()
-            ? `${filteredMessages.length} match${filteredMessages.length === 1 ? "" : "es"} in loaded messages`
-            : `${messages.length} message${messages.length === 1 ? "" : "s"} loaded`}
-          {hasMoreMessages ? " · Load earlier messages to search older history." : ""}
+            ? `${filteredMessages.length} match${
+                filteredMessages.length === 1 ? "" : "es"
+              } in loaded messages`
+            : `${messages.length} message${
+                messages.length === 1 ? "" : "s"
+              } loaded`}
+          {hasMoreMessages
+            ? " · Load earlier messages to search older history."
+            : ""}
         </p>
       </div>
 
@@ -1121,29 +1485,40 @@ export default function ConversationMessages({
         aria-relevant="additions text"
       >
         {hasMoreMessages && messages.length > 0 && (
-          <div style={{ display: "flex", justifyContent: "center", padding: "12px 0" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              padding: "12px 0",
+            }}
+          >
             <button
               type="button"
               className="button-secondary"
               onClick={() => void loadOlderMessages()}
               disabled={loadingOlderMessages}
             >
-              {loadingOlderMessages ? "Loading earlier messages…" : "Load earlier messages"}
+              {loadingOlderMessages
+                ? "Loading earlier messages…"
+                : "Load earlier messages"}
             </button>
           </div>
         )}
+
         {messages.length === 0 ? (
           <div className="empty-state">
             <h2>Start the conversation</h2>
             <p className="muted">
-              Send a message to begin discussing your shared interests or intention.
+              Send a message to begin discussing your shared interests
+              or intention.
             </p>
           </div>
         ) : filteredMessages.length === 0 ? (
           <div className="empty-state">
             <h2>No matching messages</h2>
             <p className="muted">
-              No loaded message contains “{messageSearch.trim()}”. Clear the search or load earlier messages to expand the search.
+              No loaded message contains “{messageSearch.trim()}”. Clear
+              the search or load earlier messages to expand the search.
             </p>
             <button
               type="button"
@@ -1155,49 +1530,77 @@ export default function ConversationMessages({
           </div>
         ) : (
           filteredMessages.map((message) => {
-            const isOwnMessage = message.sender_id === currentUserId;
+            const isOwnMessage =
+              message.sender_id === currentUserId;
+
             const senderName = isOwnMessage
               ? "You"
               : participants.find(
-                  (participant) => participant.user_id === message.sender_id
+                  (participant) =>
+                    participant.user_id === message.sender_id
                 )?.full_name?.trim() || "RuffNeck member";
+
             const replyTarget = message.reply_to_message_id
-              ? messages.find((item) => item.id === message.reply_to_message_id) ?? message.reply_to ?? null
+              ? messages.find(
+                  (item) =>
+                    item.id === message.reply_to_message_id
+                ) ??
+                message.reply_to ??
+                null
               : null;
+
             const replyTargetName = !replyTarget
               ? "Original message"
               : replyTarget.sender_id === currentUserId
                 ? "You"
                 : participants.find(
-                    (participant) => participant.user_id === replyTarget.sender_id
+                    (participant) =>
+                      participant.user_id === replyTarget.sender_id
                   )?.full_name?.trim() || "RuffNeck member";
 
             return (
               <article
                 key={message.id}
                 className={`message-bubble ${
-                  isOwnMessage ? "message-own" : "message-other"
+                  isOwnMessage
+                    ? "message-own"
+                    : "message-other"
                 }`}
               >
-                <span className="message-sender">{senderName}</span>
+                <span className="message-sender">
+                  {senderName}
+                </span>
+
                 {message.reply_to_message_id && (
                   <div
                     style={{
                       marginTop: 8,
                       marginBottom: 8,
                       padding: "8px 10px",
-                      borderLeft: "3px solid var(--cyan, #00b4d8)",
+                      borderLeft:
+                        "3px solid var(--cyan, #00b4d8)",
                       borderRadius: "0 8px 8px 0",
                       background: "rgba(0,180,216,0.08)",
                       maxWidth: "100%",
                     }}
                   >
-                    <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 3 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        marginBottom: 3,
+                      }}
+                    >
                       Replying to {replyTargetName}
                     </div>
+
                     <div
                       className="muted"
-                      style={{ fontSize: 12, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}
+                      style={{
+                        fontSize: 12,
+                        overflowWrap: "anywhere",
+                        whiteSpace: "pre-wrap",
+                      }}
                     >
                       {replyTarget?.deleted_at
                         ? "Original message was deleted"
@@ -1209,28 +1612,53 @@ export default function ConversationMessages({
                     </div>
                   </div>
                 )}
+
                 {message.forwarded_from_message_id && (
-                  <div className="muted" style={{ fontSize: 12, marginTop: 6, fontStyle: "italic" }}>Forwarded message</div>
+                  <div
+                    className="muted"
+                    style={{
+                      fontSize: 12,
+                      marginTop: 6,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Forwarded message
+                  </div>
                 )}
+
                 {editingMessageId === message.id ? (
-                  <form onSubmit={saveEdit} style={{ marginTop: 8 }}>
+                  <form
+                    onSubmit={saveEdit}
+                    style={{ marginTop: 8 }}
+                  >
                     <label
                       htmlFor={`edit-message-${message.id}`}
                       className="muted"
-                      style={{ display: "block", marginBottom: 6, fontSize: 12 }}
+                      style={{
+                        display: "block",
+                        marginBottom: 6,
+                        fontSize: 12,
+                      }}
                     >
                       Edit message
                     </label>
+
                     <textarea
                       id={`edit-message-${message.id}`}
                       value={editDraft}
-                      onChange={(event) => setEditDraft(event.target.value)}
+                      onChange={(event) =>
+                        setEditDraft(event.target.value)
+                      }
                       maxLength={5000}
                       rows={3}
                       required
                       disabled={savingEdit}
-                      style={{ width: "100%", boxSizing: "border-box" }}
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                      }}
                     />
+
                     <div
                       style={{
                         display: "flex",
@@ -1247,24 +1675,34 @@ export default function ConversationMessages({
                       >
                         Cancel
                       </button>
+
                       <button
                         type="submit"
                         className="button-primary"
-                        disabled={savingEdit || !editDraft.trim()}
+                        disabled={
+                          savingEdit || !editDraft.trim()
+                        }
                       >
                         {savingEdit ? "Saving…" : "Save edit"}
                       </button>
                     </div>
                   </form>
                 ) : (
-                  <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                  <p
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
                     {message.body}
                   </p>
                 )}
+
                 <time dateTime={message.created_at}>
                   {formatDate(message.created_at)}
                   {message.edited_at ? " · edited" : ""}
                 </time>
+
                 <div
                   aria-label="Message reactions"
                   style={{
@@ -1275,19 +1713,40 @@ export default function ConversationMessages({
                   }}
                 >
                   {REACTION_EMOJIS.map((emoji) => {
-                    const summary = reactionSummaries.get(`${message.id}|${emoji}`);
-                    const selected = Boolean(summary?.reactedByMe);
+                    const summary = reactionSummaries.get(
+                      `${message.id}|${emoji}`
+                    );
+
+                    const selected = Boolean(
+                      summary?.reactedByMe
+                    );
+
                     const toggleKey = `${message.id}|${emoji}`;
+
                     return (
                       <button
                         key={emoji}
                         type="button"
                         className="button-secondary"
-                        aria-label={`${emoji} reaction, ${summary?.count ?? 0} total`}
+                        aria-label={`${emoji} reaction, ${
+                          summary?.count ?? 0
+                        } total`}
                         aria-pressed={selected}
-                        title={selected ? `Remove ${emoji} reaction` : `React with ${emoji}`}
-                        disabled={Boolean(togglingReactionKey) || Boolean(deletingMessageId)}
-                        onClick={() => void toggleReaction(message.id, emoji)}
+                        title={
+                          selected
+                            ? `Remove ${emoji} reaction`
+                            : `React with ${emoji}`
+                        }
+                        disabled={
+                          Boolean(togglingReactionKey) ||
+                          Boolean(deletingMessageId)
+                        }
+                        onClick={() =>
+                          void toggleReaction(
+                            message.id,
+                            emoji
+                          )
+                        }
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
@@ -1296,17 +1755,29 @@ export default function ConversationMessages({
                           padding: "4px 8px",
                           fontSize: 13,
                           lineHeight: 1.2,
-                          borderColor: selected ? "var(--cyan, #00b4d8)" : "var(--border, #d1d5db)",
-                          background: selected ? "rgba(0,180,216,0.12)" : "transparent",
-                          opacity: togglingReactionKey === toggleKey ? 0.65 : 1,
+                          borderColor: selected
+                            ? "var(--cyan, #00b4d8)"
+                            : "var(--border, #d1d5db)",
+                          background: selected
+                            ? "rgba(0,180,216,0.12)"
+                            : "transparent",
+                          opacity:
+                            togglingReactionKey === toggleKey
+                              ? 0.65
+                              : 1,
                         }}
                       >
-                        <span aria-hidden="true">{emoji}</span>
-                        {(summary?.count ?? 0) > 0 && <span>{summary?.count}</span>}
+                        <span aria-hidden="true">
+                          {emoji}
+                        </span>
+                        {(summary?.count ?? 0) > 0 && (
+                          <span>{summary?.count}</span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
+
                 {editingMessageId !== message.id && (
                   <div
                     style={{
@@ -1321,36 +1792,64 @@ export default function ConversationMessages({
                       sourceConversationId={conversationId}
                       messageId={message.id}
                       currentUserId={currentUserId}
-                      disabled={Boolean(deletingMessageId) || Boolean(message.deleted_at)}
+                      disabled={
+                        Boolean(deletingMessageId) ||
+                        Boolean(message.deleted_at)
+                      }
                     />
+
                     <button
                       type="button"
                       className="button-secondary"
                       onClick={() => beginReply(message)}
-                      disabled={Boolean(deletingMessageId) || message.deleted_at != null}
-                      style={{ padding: "5px 10px", fontSize: 12 }}
+                      disabled={
+                        Boolean(deletingMessageId) ||
+                        message.deleted_at != null
+                      }
+                      style={{
+                        padding: "5px 10px",
+                        fontSize: 12,
+                      }}
                     >
                       Reply
                     </button>
+
                     {isOwnMessage && (
                       <>
                         <button
                           type="button"
                           className="button-secondary"
                           onClick={() => beginEdit(message)}
-                          disabled={Boolean(deletingMessageId) || savingEdit}
-                          style={{ padding: "5px 10px", fontSize: 12 }}
+                          disabled={
+                            Boolean(deletingMessageId) ||
+                            savingEdit
+                          }
+                          style={{
+                            padding: "5px 10px",
+                            fontSize: 12,
+                          }}
                         >
                           Edit
                         </button>
+
                         <button
                           type="button"
                           className="button-secondary"
-                          onClick={() => void deleteMessage(message.id)}
-                          disabled={Boolean(deletingMessageId) || savingEdit}
-                          style={{ padding: "5px 10px", fontSize: 12 }}
+                          onClick={() =>
+                            void deleteMessage(message.id)
+                          }
+                          disabled={
+                            Boolean(deletingMessageId) ||
+                            savingEdit
+                          }
+                          style={{
+                            padding: "5px 10px",
+                            fontSize: 12,
+                          }}
                         >
-                          {deletingMessageId === message.id ? "Deleting…" : "Delete"}
+                          {deletingMessageId === message.id
+                            ? "Deleting…"
+                            : "Delete"}
                         </button>
                       </>
                     )}
@@ -1360,6 +1859,7 @@ export default function ConversationMessages({
             );
           })
         )}
+
         <div ref={bottomRef} aria-hidden="true" />
       </div>
 
@@ -1373,7 +1873,10 @@ export default function ConversationMessages({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="message-compose">
+      <form
+        onSubmit={handleSubmit}
+        className="message-compose"
+      >
         {replyingTo && (
           <div
             style={{
@@ -1384,25 +1887,39 @@ export default function ConversationMessages({
               marginBottom: 12,
               padding: 10,
               border: "1px solid var(--border, #d1d5db)",
-              borderLeft: "3px solid var(--cyan, #00b4d8)",
+              borderLeft:
+                "3px solid var(--cyan, #00b4d8)",
               borderRadius: 8,
             }}
           >
             <div style={{ minWidth: 0 }}>
               <strong style={{ fontSize: 12 }}>
-                Replying to {replyingTo.sender_id === currentUserId
+                Replying to{" "}
+                {replyingTo.sender_id === currentUserId
                   ? "your message"
-                  : participants.find((participant) => participant.user_id === replyingTo.sender_id)?.full_name?.trim() || "RuffNeck member"}
+                  : participants.find(
+                      (participant) =>
+                        participant.user_id ===
+                        replyingTo.sender_id
+                    )?.full_name?.trim() ||
+                    "RuffNeck member"}
               </strong>
+
               <p
                 className="muted"
-                style={{ margin: "4px 0 0", fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 12,
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                }}
               >
                 {replyingTo.body.length > 180
                   ? `${replyingTo.body.slice(0, 177)}…`
                   : replyingTo.body}
               </p>
             </div>
+
             <button
               type="button"
               className="button-secondary"
@@ -1410,18 +1927,27 @@ export default function ConversationMessages({
               title="Cancel reply"
               onClick={() => setReplyingTo(null)}
               disabled={sending}
-              style={{ padding: "2px 8px", lineHeight: 1.5 }}
+              style={{
+                padding: "2px 8px",
+                lineHeight: 1.5,
+              }}
             >
               ×
             </button>
           </div>
         )}
-        <label htmlFor="message-body">Your message</label>
+
+        <label htmlFor="message-body">
+          Your message
+        </label>
+
         <textarea
           id="message-body"
           name="body"
           value={draft}
-          onChange={(event) => handleDraftChange(event.target.value)}
+          onChange={(event) =>
+            handleDraftChange(event.target.value)
+          }
           onBlur={stopTyping}
           minLength={1}
           maxLength={5000}
@@ -1430,11 +1956,17 @@ export default function ConversationMessages({
           required
           disabled={sending}
         />
+
         <div className="message-compose-footer">
           <span className="muted">
             {draft.trim().length}/5,000 characters
           </span>
-          <button type="submit" className="button-primary" disabled={sending || !draft.trim()}>
+
+          <button
+            type="submit"
+            className="button-primary"
+            disabled={sending || !draft.trim()}
+          >
             {sending ? "Sending…" : "Send message"}
           </button>
         </div>
