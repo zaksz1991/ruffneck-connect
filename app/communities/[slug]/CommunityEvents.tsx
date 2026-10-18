@@ -43,6 +43,14 @@ function formatEventDate(value: string) {
   }).format(new Date(value));
 }
 
+function toLocalDateTimeInput(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function eventModeLabel(mode: EventMode) {
   if (mode === "in_person") return "In person";
   if (mode === "hybrid") return "Hybrid";
@@ -169,6 +177,8 @@ export default function CommunityEvents({
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [busyEventId, setBusyEventId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState("");
@@ -411,6 +421,110 @@ export default function CommunityEvents({
     await loadEvents();
   }
 
+  async function saveEventChanges(
+    formEvent: FormEvent<HTMLFormElement>,
+    eventItem: CommunityEvent
+  ) {
+    formEvent.preventDefault();
+    if (!canManage || savingEdit) return;
+
+    if (eventItem.status !== "scheduled") {
+      setError("Only scheduled events can be edited.");
+      setEditingEventId(null);
+      return;
+    }
+
+    const formData = new FormData(formEvent.currentTarget);
+    const title = String(formData.get("title") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+    const location = String(formData.get("location") ?? "").trim();
+    const meetingUrlInput = String(formData.get("meeting_url") ?? "").trim();
+    const eventMode = String(formData.get("event_mode") ?? "online") as EventMode;
+    const startsAtInput = String(formData.get("starts_at") ?? "");
+    const endsAtInput = String(formData.get("ends_at") ?? "");
+
+    if (title.length < 3 || title.length > 120) {
+      setError("Event title must contain between 3 and 120 characters.");
+      return;
+    }
+
+    const startsAt = new Date(startsAtInput);
+    if (!startsAtInput || Number.isNaN(startsAt.getTime())) {
+      setError("Choose a valid event start date and time.");
+      return;
+    }
+    if (startsAt.getTime() <= Date.now()) {
+      setError("Choose a future start date and time.");
+      return;
+    }
+
+    let endsAt: Date | null = null;
+    if (endsAtInput) {
+      endsAt = new Date(endsAtInput);
+      if (Number.isNaN(endsAt.getTime()) || endsAt.getTime() < startsAt.getTime()) {
+        setError("The event end time must be after its start time.");
+        return;
+      }
+    }
+
+    if (description.length > 2000 || location.length > 240) {
+      setError("Description or location exceeds the allowed length.");
+      return;
+    }
+
+    let meetingUrl: string | null = null;
+    if (meetingUrlInput) {
+      try {
+        const parsedUrl = new URL(meetingUrlInput);
+        if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+          throw new Error("Unsupported URL protocol");
+        }
+        meetingUrl = parsedUrl.toString();
+      } catch {
+        setError("Enter a valid meeting link beginning with https:// or http://.");
+        return;
+      }
+    }
+
+    if (!["online", "in_person", "hybrid"].includes(eventMode)) {
+      setError("Choose a valid event format.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setError("");
+    setMessage("");
+
+    const { data, error: updateError } = await supabase
+      .from("community_events")
+      .update({
+        title,
+        description: description || null,
+        location: location || null,
+        meeting_url: meetingUrl,
+        event_mode: eventMode,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt ? endsAt.toISOString() : null,
+      })
+      .eq("id", eventItem.id)
+      .eq("community_id", communityId)
+      .eq("status", "scheduled")
+      .select("id")
+      .maybeSingle();
+
+    setSavingEdit(false);
+
+    if (updateError || !data) {
+      console.error("Update community event failed:", updateError?.message ?? "No event row was updated");
+      setError("The event could not be updated. It may have changed or your permissions may have changed.");
+      return;
+    }
+
+    setEditingEventId(null);
+    setMessage("Event updated successfully.");
+    await loadEvents();
+  }
+
   async function toggleRsvp(eventItem: CommunityEvent) {
     if (!canRsvp || !userId || busyEventId) return;
     if (eventItem.status !== "scheduled" || new Date(eventItem.starts_at) <= new Date()) {
@@ -588,6 +702,60 @@ export default function CommunityEvents({
                 {eventItem.meeting_url && !cancelled && (
                   <p><a href={eventItem.meeting_url} target="_blank" rel="noopener noreferrer">Open meeting link</a></p>
                 )}
+                {canManage && editingEventId === eventItem.id && !cancelled && eventItem.status === "scheduled" && !isPast && (
+                  <form
+                    key={`edit-${eventItem.id}`}
+                    className="rn-community-event-form rn-community-event-edit-form"
+                    onSubmit={(formEvent) => void saveEventChanges(formEvent, eventItem)}
+                  >
+                    <h4>Edit event</h4>
+                    <label>
+                      Event title
+                      <input name="title" type="text" minLength={3} maxLength={120} required defaultValue={eventItem.title} />
+                    </label>
+                    <label>
+                      Description
+                      <textarea name="description" maxLength={2000} rows={3} defaultValue={eventItem.description ?? ""} />
+                    </label>
+                    <div className="rn-community-event-form-grid">
+                      <label>
+                        Event format
+                        <select name="event_mode" defaultValue={eventItem.event_mode}>
+                          <option value="online">Online</option>
+                          <option value="in_person">In person</option>
+                          <option value="hybrid">Hybrid</option>
+                        </select>
+                      </label>
+                      <label>
+                        Location
+                        <input name="location" type="text" maxLength={240} defaultValue={eventItem.location ?? ""} />
+                      </label>
+                      <label>
+                        Starts at
+                        <input name="starts_at" type="datetime-local" required defaultValue={toLocalDateTimeInput(eventItem.starts_at)} />
+                      </label>
+                      <label>
+                        Ends at
+                        <input name="ends_at" type="datetime-local" defaultValue={toLocalDateTimeInput(eventItem.ends_at)} />
+                      </label>
+                    </div>
+                    <label>
+                      Meeting link
+                      <input name="meeting_url" type="url" maxLength={1000} placeholder="https://…" defaultValue={eventItem.meeting_url ?? ""} />
+                    </label>
+                    <div className="rn-community-event-form-footer">
+                      <p className="muted">Changing the date updates the event for all members.</p>
+                      <div className="rn-community-event-card-actions">
+                        <button className="button button-primary" type="submit" disabled={savingEdit}>
+                          {savingEdit ? "Saving…" : "Save changes"}
+                        </button>
+                        <button className="button button-secondary" type="button" onClick={() => setEditingEventId(null)} disabled={savingEdit}>
+                          Discard changes
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                )}
                 {canManage && (
                   <div className="rn-community-event-attendance">
                     {attendeeError ? (
@@ -670,8 +838,22 @@ export default function CommunityEvents({
                       Add to calendar
                     </button>
                   )}
+                  {canManage && !cancelled && !isPast && eventItem.status === "scheduled" && (
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      onClick={() => {
+                        setError("");
+                        setMessage("");
+                        setEditingEventId((current) => current === eventItem.id ? null : eventItem.id);
+                      }}
+                      disabled={savingEdit || busyEventId === eventItem.id}
+                    >
+                      {editingEventId === eventItem.id ? "Close editor" : "Edit event"}
+                    </button>
+                  )}
                   {canManage && !cancelled && eventItem.status === "scheduled" && (
-                    <button className="button button-secondary" type="button" onClick={() => void cancelEvent(eventItem)} disabled={busyEventId === eventItem.id}>
+                    <button className="button button-secondary" type="button" onClick={() => void cancelEvent(eventItem)} disabled={busyEventId === eventItem.id || savingEdit}>
                       Cancel event
                     </button>
                   )}
@@ -688,6 +870,8 @@ export default function CommunityEvents({
         .rn-community-events-heading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
         .rn-community-event-create { margin-bottom: 1rem; }
         .rn-community-event-create summary { cursor: pointer; font-weight: 800; }
+        .rn-community-event-edit-form { width: 100%; margin: 1rem 0; padding: 1rem; border: 1px solid #dbe4ee; border-radius: 12px; background: #f8fafc; }
+        .rn-community-event-edit-form h4 { margin: 0; font-size: 1.05rem; }
         .rn-community-event-form { display: grid; gap: 1rem; margin-top: 1rem; }
         .rn-community-event-form label { display: grid; gap: .4rem; font-weight: 650; }
         .rn-community-event-form input, .rn-community-event-form textarea, .rn-community-event-form select { width: 100%; min-width: 0; border: 1px solid #cbd5e1; border-radius: 10px; padding: .75rem .85rem; color: #10243b; background: #fff; font: inherit; }
