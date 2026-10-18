@@ -45,7 +45,9 @@ function getAvatarUrl(value: string | null): string {
         url.searchParams.get("id");
 
       return fileId
-        ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w300`
+        ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(
+            fileId
+          )}&sz=w300`
         : "";
     }
 
@@ -202,7 +204,9 @@ export default async function MembersPage({ searchParams }: PageProps) {
           <section className="rn-members-directory">
             <div className="rn-members-section-heading">
               <div>
-                <p className="rn-members-section-kicker">YOUR COMMUNITY</p>
+                <p className="rn-members-section-kicker">
+                  YOUR COMMUNITY
+                </p>
                 <h2>Meet the members</h2>
                 <p>
                   Explore profiles and find people worth connecting with.
@@ -214,7 +218,9 @@ export default async function MembersPage({ searchParams }: PageProps) {
                 <span>
                   {error
                     ? "Directory unavailable"
-                    : `${members.length}${members.length === 100 ? "+" : ""} ${
+                    : `${members.length}${
+                        members.length === 100 ? "+" : ""
+                      } ${
                         members.length === 1 ? "member" : "members"
                       } shown`}
                 </span>
@@ -452,7 +458,9 @@ export default async function MembersPage({ searchParams }: PageProps) {
 
           <section className="rn-members-network-banner">
             <div className="rn-members-banner-copy">
-              <p className="rn-members-banner-kicker">BEYOND THE DIRECTORY</p>
+              <p className="rn-members-banner-kicker">
+                BEYOND THE DIRECTORY
+              </p>
               <h2>
                 Your next opportunity could start with a conversation.
               </h2>
@@ -817,20 +825,9 @@ export default async function MembersPage({ searchParams }: PageProps) {
           font-weight: 900;
         }
 
-        .rn-summary-cyan {
-          background: #e3f9fd;
-          color: #008aa5;
-        }
-
-        .rn-summary-purple {
-          background: #f0eaff;
-          color: #7652be;
-        }
-
-        .rn-summary-gold {
-          background: #fff4d9;
-          color: #966d0c;
-        }
+        .rn-summary-cyan { background: #e3f9fd; color: #008aa5; }
+        .rn-summary-purple { background: #f0eaff; color: #7652be; }
+        .rn-summary-gold { background: #fff4d9; color: #966d0c; }
 
         .rn-members-summary-card strong {
           color: var(--rn-navy);
@@ -845,9 +842,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           line-height: 1.6;
         }
 
-        .rn-members-directory {
-          margin-top: 52px;
-        }
+        .rn-members-directory { margin-top: 52px; }
 
         .rn-members-section-heading {
           display: flex;
@@ -980,9 +975,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           transition: border-color 180ms ease, box-shadow 180ms ease;
         }
 
-        .rn-members-search-input-wrap input::placeholder {
-          color: #9aa7b6;
-        }
+        .rn-members-search-input-wrap input::placeholder { color: #9aa7b6; }
 
         .rn-members-search-input-wrap input:focus {
           border-color: var(--rn-cyan);
@@ -1002,9 +995,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           cursor: pointer;
         }
 
-        .rn-search-submit:hover {
-          background: #143b60;
-        }
+        .rn-search-submit:hover { background: #143b60; }
 
         .rn-members-clear {
           color: #63768c !important;
@@ -1013,9 +1004,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           text-decoration: none !important;
         }
 
-        .rn-members-clear:hover {
-          color: #008da9 !important;
-        }
+        .rn-members-clear:hover { color: #008da9 !important; }
 
         .rn-members-search-status {
           margin: 15px 0 0;
@@ -1023,9 +1012,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           font-size: 11px;
         }
 
-        .rn-members-search-status strong {
-          color: var(--rn-navy);
-        }
+        .rn-members-search-status strong { color: var(--rn-navy); }
 
         .rn-members-results-heading {
           display: flex;
@@ -1045,10 +1032,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           letter-spacing: 1.3px;
         }
 
-        .rn-results-note {
-          color: #8a98a9;
-          font-size: 10px;
-        }
+        .rn-results-note { color: #8a98a9; font-size: 10px; }
 
         .rn-members-grid {
           display: grid;
@@ -1132,9 +1116,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           font-weight: 900;
         }
 
-        .rn-member-identity-copy {
-          min-width: 0;
-        }
+        .rn-member-identity-copy { min-width: 0; }
 
         .rn-member-identity-copy h3 {
           margin: 0;
@@ -1149,9 +1131,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           text-decoration: none !important;
         }
 
-        .rn-member-identity-copy h3 a:hover {
-          color: #008da9 !important;
-        }
+        .rn-member-identity-copy h3 a:hover { color: #008da9 !important; }
 
         .rn-member-language {
           display: inline-flex;
@@ -1166,15 +1146,9 @@ export default async function MembersPage({ searchParams }: PageProps) {
           font-weight: 750;
         }
 
-        .rn-language-muted {
-          background: #f2f5f8;
-          color: #7b8999;
-        }
+        .rn-language-muted { background: #f2f5f8; color: #7b8999; }
 
-        .rn-member-bio-wrap {
-          flex: 1;
-          margin-top: 21px;
-        }
+        .rn-member-bio-wrap { flex: 1; margin-top: 21px; }
 
         .rn-member-bio {
           display: -webkit-box;
@@ -1230,9 +1204,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           color: #06243a !important;
         }
 
-        .rn-member-connect-button:hover {
-          background: #46cde5;
-        }
+        .rn-member-connect-button:hover { background: #46cde5; }
 
         .rn-members-limit-note {
           display: flex;
@@ -1304,9 +1276,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           line-height: 1.8;
         }
 
-        .rn-members-empty .rn-members-section-kicker {
-          margin-bottom: 10px;
-        }
+        .rn-members-empty .rn-members-section-kicker { margin-bottom: 10px; }
 
         .rn-members-network-banner {
           display: flex;
@@ -1359,9 +1329,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
           color: #06243a !important;
         }
 
-        .rn-banner-primary:hover {
-          background: #46cde5;
-        }
+        .rn-banner-primary:hover { background: #46cde5; }
 
         .rn-members-banner-link {
           padding: 10px;
@@ -1372,13 +1340,8 @@ export default async function MembersPage({ searchParams }: PageProps) {
           text-decoration: none !important;
         }
 
-        .rn-members-shortcuts {
-          margin-top: 48px;
-        }
-
-        .rn-members-shortcuts-heading {
-          margin-bottom: 20px;
-        }
+        .rn-members-shortcuts { margin-top: 48px; }
+        .rn-members-shortcuts-heading { margin-bottom: 20px; }
 
         .rn-members-shortcut-grid {
           display: grid;
@@ -1416,20 +1379,9 @@ export default async function MembersPage({ searchParams }: PageProps) {
           font-weight: 900;
         }
 
-        .rn-shortcut-cyan {
-          background: #e3f9fd;
-          color: #008aa5;
-        }
-
-        .rn-shortcut-gold {
-          background: #fff4d9;
-          color: #946a0b;
-        }
-
-        .rn-shortcut-purple {
-          background: #f0eaff;
-          color: #7652be;
-        }
+        .rn-shortcut-cyan { background: #e3f9fd; color: #008aa5; }
+        .rn-shortcut-gold { background: #fff4d9; color: #946a0b; }
+        .rn-shortcut-purple { background: #f0eaff; color: #7652be; }
 
         .rn-shortcut-copy {
           display: flex;
@@ -1460,25 +1412,18 @@ export default async function MembersPage({ searchParams }: PageProps) {
 
         @media (max-width: 1000px) {
           .rn-members-hero {
-            grid-template-columns: 1.15fr 0.85fr;
+            grid-template-columns: 1fr 0.8fr;
             padding: 32px;
           }
 
-          .rn-members-hero h1 {
-            font-size: 43px;
-          }
+          .rn-members-hero h1 { font-size: 43px; }
 
           .rn-members-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
-          .rn-members-summary-card {
-            padding: 16px;
-          }
-
-          .rn-members-summary-card p {
-            font-size: 10px;
-          }
+          .rn-members-summary-card { padding: 16px; }
+          .rn-members-summary-card p { font-size: 10px; }
         }
 
         @media (max-width: 760px) {
@@ -1494,57 +1439,35 @@ export default async function MembersPage({ searchParams }: PageProps) {
             margin: 0 auto;
           }
 
-          .rn-members-ring {
-            width: 220px;
-          }
-
-          .rn-members-hero-center {
-            width: 145px;
-            height: 145px;
-          }
+          .rn-members-ring { width: 220px; }
+          .rn-members-hero-center { width: 145px; height: 145px; }
 
           .rn-members-summary {
             grid-template-columns: 1fr;
             gap: 10px;
           }
 
-          .rn-members-summary-card {
-            padding: 17px;
-          }
+          .rn-members-summary-card { padding: 17px; }
 
           .rn-members-network-banner {
             align-items: flex-start;
             flex-direction: column;
           }
 
-          .rn-members-banner-actions {
-            width: 100%;
-            max-width: 300px;
-          }
-
-          .rn-members-shortcut-grid {
-            grid-template-columns: 1fr;
-          }
+          .rn-members-banner-actions { width: 100%; max-width: 300px; }
+          .rn-members-shortcut-grid { grid-template-columns: 1fr; }
         }
 
         @media (max-width: 520px) {
-          .rn-members-page {
-            padding: 17px 0 38px;
-          }
-
-          .rn-members-container {
-            width: calc(100% - 28px);
-          }
+          .rn-members-page { padding: 17px 0 38px; }
+          .rn-members-container { width: calc(100% - 28px); }
 
           .rn-members-hero {
             padding: 25px 20px 16px;
             border-radius: 20px;
           }
 
-          .rn-members-kicker {
-            font-size: 9px;
-            letter-spacing: 1.1px;
-          }
+          .rn-members-kicker { font-size: 9px; letter-spacing: 1.1px; }
 
           .rn-members-hero h1 {
             margin-top: 20px;
@@ -1552,38 +1475,17 @@ export default async function MembersPage({ searchParams }: PageProps) {
             letter-spacing: -1.7px;
           }
 
-          .rn-members-hero-copy > p {
-            font-size: 12px;
-          }
+          .rn-members-hero-copy > p { font-size: 12px; }
 
-          .rn-members-hero-actions {
-            flex-direction: column;
-          }
+          .rn-members-hero-actions { flex-direction: column; }
+          .rn-members-hero-actions .rn-members-button { width: 100%; }
 
-          .rn-members-hero-actions .rn-members-button {
-            width: 100%;
-          }
+          .rn-members-principles { gap: 6px; }
+          .rn-members-principles span { font-size: 8px; }
 
-          .rn-members-principles {
-            gap: 6px;
-          }
-
-          .rn-members-principles span {
-            font-size: 8px;
-          }
-
-          .rn-members-hero-visual {
-            min-height: 210px;
-          }
-
-          .rn-members-ring {
-            width: 190px;
-          }
-
-          .rn-members-hero-center {
-            width: 130px;
-            height: 130px;
-          }
+          .rn-members-hero-visual { min-height: 210px; }
+          .rn-members-ring { width: 190px; }
+          .rn-members-hero-center { width: 130px; height: 130px; }
 
           .rn-members-hero-symbol {
             width: 39px;
@@ -1591,31 +1493,14 @@ export default async function MembersPage({ searchParams }: PageProps) {
             font-size: 16px;
           }
 
-          .rn-members-hero-center strong {
-            font-size: 16px;
-          }
+          .rn-members-hero-center strong { font-size: 16px; }
 
-          .rn-members-float {
-            gap: 7px;
-            padding: 9px;
-          }
+          .rn-members-float { gap: 7px; padding: 9px; }
+          .rn-members-float-icon { width: 29px; height: 29px; }
+          .rn-members-float strong { font-size: 9px; }
+          .rn-members-float small { font-size: 8px; }
 
-          .rn-members-float-icon {
-            width: 29px;
-            height: 29px;
-          }
-
-          .rn-members-float strong {
-            font-size: 9px;
-          }
-
-          .rn-members-float small {
-            font-size: 8px;
-          }
-
-          .rn-members-directory {
-            margin-top: 38px;
-          }
+          .rn-members-directory { margin-top: 38px; }
 
           .rn-members-section-heading {
             align-items: flex-start;
@@ -1628,9 +1513,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
             font-size: 26px;
           }
 
-          .rn-members-search-panel {
-            padding: 18px;
-          }
+          .rn-members-search-panel { padding: 18px; }
 
           .rn-members-search-form {
             align-items: stretch;
@@ -1642,9 +1525,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
             flex-wrap: wrap;
           }
 
-          .rn-members-search-actions .rn-search-submit {
-            flex: 1;
-          }
+          .rn-members-search-actions .rn-search-submit { flex: 1; }
 
           .rn-members-results-heading {
             align-items: flex-start;
@@ -1657,22 +1538,11 @@ export default async function MembersPage({ searchParams }: PageProps) {
             gap: 12px;
           }
 
-          .rn-member-card {
-            padding: 19px;
-          }
+          .rn-member-card { padding: 19px; }
+          .rn-member-identity { margin-top: 20px; }
+          .rn-member-avatar { width: 67px; height: 67px; }
 
-          .rn-member-identity {
-            margin-top: 20px;
-          }
-
-          .rn-member-avatar {
-            width: 67px;
-            height: 67px;
-          }
-
-          .rn-member-card-footer {
-            gap: 8px;
-          }
+          .rn-member-card-footer { gap: 8px; }
 
           .rn-member-profile-button,
           .rn-member-connect-button {
@@ -1686,13 +1556,8 @@ export default async function MembersPage({ searchParams }: PageProps) {
             border-radius: 17px;
           }
 
-          .rn-members-banner-copy h2 {
-            font-size: 25px;
-          }
-
-          .rn-members-shortcuts {
-            margin-top: 38px;
-          }
+          .rn-members-banner-copy h2 { font-size: 25px; }
+          .rn-members-shortcuts { margin-top: 38px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
