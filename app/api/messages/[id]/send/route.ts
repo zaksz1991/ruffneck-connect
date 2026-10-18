@@ -3,14 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-type RouteContext = {
+ type RouteContext = {
   params: Promise<{ id: string }>;
-};
-
-type ParticipantProfile = {
-  user_id: string;
-  full_name: string | null;
-  avatar_url: string | null;
 };
 
 const UUID_REGEX =
@@ -23,7 +17,10 @@ export async function POST(
   const { id } = await params;
 
   if (!UUID_REGEX.test(id)) {
-    return NextResponse.json({ error: "Invalid conversation ID." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid conversation ID." },
+      { status: 400 }
+    );
   }
 
   const supabase = await createClient();
@@ -33,38 +30,46 @@ export async function POST(
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    return NextResponse.redirect(
-      new URL(`/login?next=${encodeURIComponent(`/messages/${id}`)}`, request.url),
-      303
+    return NextResponse.json(
+      { error: "Authentication required." },
+      { status: 401, headers: { "Cache-Control": "no-store" } }
     );
   }
 
   const contentType = request.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
-  let body: unknown;
+  let rawBody: unknown;
   let rawReplyToMessageId: unknown = null;
 
   try {
     if (isJson) {
       const payload: unknown = await request.json();
-      if (typeof payload === "object" && payload !== null) {
-        body = "body" in payload ? payload.body : undefined;
-        rawReplyToMessageId = "replyToMessageId" in payload ? payload.replyToMessageId : null;
+      if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {
+        rawBody = "body" in payload ? payload.body : undefined;
+        rawReplyToMessageId = "replyToMessageId" in payload
+          ? payload.replyToMessageId
+          : null;
       }
     } else {
       const formData = await request.formData();
-      body = formData.get("body");
+      rawBody = formData.get("body");
       rawReplyToMessageId = formData.get("replyToMessageId");
     }
   } catch {
-    return NextResponse.json({ error: "Invalid message request." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid message request." },
+      { status: 400 }
+    );
   }
 
-  if (typeof body !== "string") {
-    return NextResponse.json({ error: "A message is required." }, { status: 400 });
+  if (typeof rawBody !== "string") {
+    return NextResponse.json(
+      { error: "A message is required." },
+      { status: 400 }
+    );
   }
 
-  const messageBody = body.trim();
+  const messageBody = rawBody.trim();
   if (!messageBody || messageBody.length > 5000) {
     return NextResponse.json(
       { error: "Messages must contain between 1 and 5,000 characters." },
@@ -88,9 +93,19 @@ export async function POST(
   }
 
   let replyToMessageId: string | null = null;
-  if (rawReplyToMessageId !== null && rawReplyToMessageId !== undefined && rawReplyToMessageId !== "") {
-    if (typeof rawReplyToMessageId !== "string" || !UUID_REGEX.test(rawReplyToMessageId)) {
-      return NextResponse.json({ error: "Invalid reply target." }, { status: 400 });
+  if (
+    rawReplyToMessageId !== null &&
+    rawReplyToMessageId !== undefined &&
+    rawReplyToMessageId !== ""
+  ) {
+    if (
+      typeof rawReplyToMessageId !== "string" ||
+      !UUID_REGEX.test(rawReplyToMessageId)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid reply target." },
+        { status: 400 }
+      );
     }
 
     const { data: parentMessage, error: parentError } = await supabase
@@ -110,6 +125,7 @@ export async function POST(
         { status: 400 }
       );
     }
+
     replyToMessageId = parentMessage.id;
   }
 
@@ -119,15 +135,22 @@ export async function POST(
       conversation_id: id,
       sender_id: user.id,
       body: messageBody,
-      ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
+      ...(replyToMessageId
+        ? { reply_to_message_id: replyToMessageId }
+        : {}),
     })
-    .select("id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id")
+    .select(
+      "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id"
+    )
     .single();
 
   if (insertError || !message) {
     if (insertError?.message?.includes("MEMBER_BLOCKED")) {
       return NextResponse.json(
-        { error: "This message was not sent because you or the other member has blocked the other." },
+        {
+          error:
+            "This message was not sent because you or the other member has blocked the other.",
+        },
         { status: 403, headers: { "Cache-Control": "no-store" } }
       );
     }
@@ -139,37 +162,30 @@ export async function POST(
     );
   }
 
-  // The AFTER INSERT database trigger updates last_message_at and updated_at.
-  const { data: participantRows, error: recipientsError } = await supabase.rpc(
-    "get_conversation_participants",
-    { p_conversation_id: id }
+  // This SECURITY DEFINER RPC inserts notifications without requiring the
+  // authenticated client to have direct INSERT permission on notifications.
+  const { error: notificationError } = await supabase.rpc(
+    "notify_message_recipients",
+    { p_message_id: message.id }
   );
 
-  if (recipientsError) {
-    console.error("Failed to load message notification recipients:", recipientsError.message);
-  } else {
-    const recipients = ((participantRows ?? []) as ParticipantProfile[]).filter(
-      (recipient) => recipient.user_id !== user.id
+  if (notificationError) {
+    // A notification failure must not turn a successfully sent message into a failure.
+    console.error(
+      "Message notification RPC failed:",
+      notificationError.message
     );
-    if (recipients.length > 0) {
-      const senderName =
-        user.user_metadata?.full_name?.trim() || user.email?.split("@")[0] || "A RuffNeck member";
-      const preview = messageBody.length > 140 ? `${messageBody.slice(0, 137)}...` : messageBody;
-      const notifications = recipients.map((recipient) => ({
-        user_id: recipient.user_id,
-        actor_id: user.id,
-        notification_type: "new_message",
-        title: `New message from ${senderName}`.slice(0, 160),
-        body: preview,
-        link: `/messages/${id}`,
-      }));
-      const { error: notificationError } = await supabase.from("notifications").insert(notifications);
-      if (notificationError) {
-        console.error("Message notification insert failed:", notificationError.message);
-      }
-    }
   }
 
-  if (isJson) return NextResponse.json({ message }, { status: 201 });
-  return NextResponse.redirect(new URL(`/messages/${id}`, request.url), 303);
+  if (isJson) {
+    return NextResponse.json(
+      { message },
+      { status: 201, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  return NextResponse.redirect(
+    new URL(`/messages/${id}`, request.url),
+    303
+  );
 }
