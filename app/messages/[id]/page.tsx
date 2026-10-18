@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConversationMessages from "@/components/ConversationMessages";
-import MemberSafetyActions from "@/components/MemberSafetyActions";
+import ConversationReadStatus from "@/components/ConversationReadStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +64,9 @@ const UUID_REGEX =
 export default async function ConversationPage({ params }: PageProps) {
   const { id } = await params;
 
-  if (!UUID_REGEX.test(id)) notFound();
+  if (!UUID_REGEX.test(id)) {
+    notFound();
+  }
 
   const supabase = await createClient();
   const {
@@ -75,7 +77,10 @@ export default async function ConversationPage({ params }: PageProps) {
     redirect(`/login?next=${encodeURIComponent(`/messages/${id}`)}`);
   }
 
-  const { data: conversation, error: conversationError } = await supabase
+  const {
+    data: conversation,
+    error: conversationError,
+  } = await supabase
     .from("conversations")
     .select("id, conversation_type, intent_id, title, created_at")
     .eq("id", id)
@@ -84,10 +89,16 @@ export default async function ConversationPage({ params }: PageProps) {
   if (conversationError) {
     console.error("Failed to load conversation:", conversationError.message);
   }
-  if (!conversation) notFound();
+
+  if (!conversation) {
+    notFound();
+  }
 
   const currentConversation = conversation as Conversation;
-  const { data: ownParticipant, error: participantError } = await supabase
+  const {
+    data: ownParticipant,
+    error: participantError,
+  } = await supabase
     .from("conversation_participants")
     .select("user_id, status")
     .eq("conversation_id", id)
@@ -95,12 +106,16 @@ export default async function ConversationPage({ params }: PageProps) {
     .eq("status", "active")
     .maybeSingle();
 
-  if (participantError || !ownParticipant) notFound();
+  if (participantError || !ownParticipant) {
+    notFound();
+  }
 
-  const { data: participantRows, error: participantProfilesError } =
-    await supabase.rpc("get_conversation_participants", {
-      p_conversation_id: id,
-    });
+  const {
+    data: participantRows,
+    error: participantProfilesError,
+  } = await supabase.rpc("get_conversation_participants", {
+    p_conversation_id: id,
+  });
 
   if (participantProfilesError) {
     console.error(
@@ -109,7 +124,8 @@ export default async function ConversationPage({ params }: PageProps) {
     );
   }
 
-  const participants = (participantRows ?? []) as ConversationParticipantProfile[];
+  const participants =
+    (participantRows ?? []) as ConversationParticipantProfile[];
   const otherParticipants = participants.filter(
     (participant) => participant.user_id !== user.id
   );
@@ -121,7 +137,10 @@ export default async function ConversationPage({ params }: PageProps) {
       ? currentConversation.title || "Intent conversation"
       : otherNames.join(", ") || "Direct conversation";
 
-  const { data: messageRows, error: messagesError } = await supabase
+  const {
+    data: messageRows,
+    error: messagesError,
+  } = await supabase
     .from("messages")
     .select(
       "id, conversation_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_message_id, reply_to:messages!messages_reply_to_message_id_fkey(id, sender_id, body, deleted_at)"
@@ -136,11 +155,12 @@ export default async function ConversationPage({ params }: PageProps) {
     console.error("Failed to load messages:", messagesError.message);
   }
 
-  const messages = (messageRows ?? []).map(normalizeMessageQueryRow).reverse();
-  const directOtherParticipant =
-    currentConversation.conversation_type === "direct" && otherParticipants.length === 1
-      ? otherParticipants[0]
-      : null;
+  const messages = (messageRows ?? [])
+    .map(normalizeMessageQueryRow)
+    .reverse();
+  const latestOwnMessageAt = [...messages]
+    .reverse()
+    .find((message) => message.sender_id === user.id)?.created_at ?? null;
 
   return (
     <main className="page-shell">
@@ -161,7 +181,6 @@ export default async function ConversationPage({ params }: PageProps) {
             </p>
           </div>
           {otherParticipants[0]?.avatar_url && (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={otherParticipants[0].avatar_url}
               alt=""
@@ -178,19 +197,16 @@ export default async function ConversationPage({ params }: PageProps) {
             />
           )}
         </div>
-
-        {directOtherParticipant && (
-          <MemberSafetyActions
-            otherUserId={directOtherParticipant.user_id}
-            otherUserName={directOtherParticipant.full_name?.trim() || "RuffNeck member"}
-          />
-        )}
-
         <ConversationMessages
           conversationId={id}
           currentUserId={user.id}
           initialMessages={messages}
           participants={participants}
+        />
+        <ConversationReadStatus
+          conversationId={id}
+          currentUserId={user.id}
+          initialLatestOwnMessageAt={latestOwnMessageAt}
         />
       </section>
     </main>
