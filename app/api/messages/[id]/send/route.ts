@@ -18,6 +18,7 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ATTACHMENT_PREFIX = "__RN_CHAT_ATTACHMENT_V1__:";
+const ATTACHMENT_BUCKET = "rn-chat-attachments";
 
 const MAX_MESSAGE_LENGTH = 5000;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
@@ -129,6 +130,78 @@ function validateMessageBody(body: string): string | null {
   }
 }
 
+function parseAttachment(body: string): AttachmentMetadata | null {
+  if (!body.startsWith(ATTACHMENT_PREFIX)) {
+    return null;
+  }
+
+  try {
+    const value: unknown = JSON.parse(
+      body.slice(ATTACHMENT_PREFIX.length)
+    );
+
+    return isValidAttachment(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verifies that an attachment path belongs to this conversation and
+ * the currently authenticated sender.
+ */
+function attachmentBelongsToSender(
+  attachment: AttachmentMetadata,
+  conversationId: string,
+  userId: string
+): boolean {
+  const expectedPrefix = `${conversationId}/${userId}/`;
+
+  if (!attachment.path.startsWith(expectedPrefix)) {
+    return false;
+  }
+
+  const storedFilename = attachment.path.slice(expectedPrefix.length);
+
+  return (
+    storedFilename.length > 0 &&
+    !storedFilename.includes("/") &&
+    storedFilename !== "." &&
+    storedFilename !== ".."
+  );
+}
+
+/**
+ * Checks that the referenced object exists in the private bucket.
+ * The path has already been constrained to the authenticated sender.
+ */
+async function verifyAttachmentExists(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  attachment: AttachmentMetadata
+): Promise<boolean> {
+  const segments = attachment.path.split("/");
+  const filename = segments[2];
+  const directory = `${segments[0]}/${segments[1]}`;
+
+  const { data, error } = await supabase.storage
+    .from(ATTACHMENT_BUCKET)
+    .list(directory, {
+      limit: 100,
+      search: filename,
+    });
+
+  if (error) {
+    console.error(
+      "Chat attachment lookup failed:",
+      error.message
+    );
+
+    throw new Error("ATTACHMENT_LOOKUP_FAILED");
+  }
+
+  return (data ?? []).some((file) => file.name === filename);
+}
+
 export async function POST(
   request: NextRequest,
   { params }: RouteContext
@@ -201,7 +274,10 @@ export async function POST(
       participantError.message
     );
 
-    return jsonError("Unable to verify conversation membership.", 500);
+    return jsonError(
+      "Unable to verify conversation membership.",
+      500
+    );
   }
 
   if (!participant) {
@@ -209,6 +285,40 @@ export async function POST(
       "You are not an active participant in this conversation.",
       403
     );
+  }
+
+  const attachment = parseAttachment(messageBody);
+
+  if (messageBody.startsWith(ATTACHMENT_PREFIX)) {
+    if (!attachment) {
+      return jsonError("Invalid attachment information.", 400);
+    }
+
+    if (!attachmentBelongsToSender(attachment, id, user.id)) {
+      return jsonError(
+        "This attachment does not belong to you or this conversation.",
+        403
+      );
+    }
+
+    try {
+      const exists = await verifyAttachmentExists(
+        supabase,
+        attachment
+      );
+
+      if (!exists) {
+        return jsonError(
+          "The attachment could not be found. Please upload it again.",
+          400
+        );
+      }
+    } catch {
+      return jsonError(
+        "Unable to verify the attachment. Please try again.",
+        500
+      );
+    }
   }
 
   let replyToMessageId: string | null = null;
@@ -237,7 +347,10 @@ export async function POST(
         parentError.message
       );
 
-      return jsonError("Unable to verify the reply target.", 500);
+      return jsonError(
+        "Unable to verify the reply target.",
+        500
+      );
     }
 
     if (
