@@ -134,6 +134,33 @@ export default function MemberConnectionButton({
     setWorking(false);
   }
 
+  async function cancelRequest() {
+    if (!connection || connection.status !== "pending" || connection.direction !== "outgoing") {
+      return;
+    }
+
+    setWorking(true);
+    setError("");
+    setMessage("");
+    const supabase = createClient();
+    const { error: cancelError } = await supabase.rpc(
+      "cancel_member_connection_request",
+      { p_connection_id: connection.connection_id }
+    );
+
+    if (cancelError) {
+      console.error("Could not cancel connection request:", cancelError.message);
+      setError("The request could not be cancelled. Refresh and try again.");
+    } else {
+      setConnection({ ...connection, status: "cancelled" });
+      setMessage("Connection request cancelled.");
+      await loadStatus();
+      router.refresh();
+    }
+
+    setWorking(false);
+  }
+
   async function openConversation() {
     setWorking(true);
     setError("");
@@ -181,7 +208,17 @@ export default function MemberConnectionButton({
           </button>
         </>
       ) : outgoingPending ? (
-        <span className="status-badge status-pending">Request sent · awaiting response</span>
+        <>
+          <span className="status-badge status-pending">Request sent · awaiting response</span>
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={cancelRequest}
+            disabled={working}
+          >
+            {working ? "Cancelling…" : "Cancel request"}
+          </button>
+        </>
       ) : (
         <button className="button button-primary" type="button" onClick={requestConnection} disabled={working}>
           {working ? "Sending…" : connection?.status === "declined" || connection?.status === "cancelled" ? "Connect again" : "Connect"}
