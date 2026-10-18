@@ -9,16 +9,50 @@ type RouteContext = {
 };
 
 const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function redirectTo(request: NextRequest, path: string) {
+function wantsJson(request: NextRequest) {
+  const contentType = request.headers.get("content-type") ?? "";
+  const accept = request.headers.get("accept") ?? "";
+
+  return (
+    contentType.toLowerCase().includes("application/json") ||
+    accept.toLowerCase().includes("application/json")
+  );
+}
+
+function jsonResult(
+  body: Record<string, unknown>,
+  status = 200
+) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+function redirectTo(
+  request: NextRequest,
+  path: string
+) {
   return NextResponse.redirect(new URL(path, request.url), 303);
 }
 
-export async function POST(request: NextRequest, context: RouteContext) {
-  const { id } = await context.params;
+export async function POST(
+  request: NextRequest,
+  context: RouteContext
+) {
+  const returnJson = wantsJson(request);
+  const { id: communityId } = await context.params;
 
-  if (!UUID_REGEX.test(id)) {
+  if (!UUID_REGEX.test(communityId)) {
+    if (returnJson) {
+      return jsonResult(
+        { success: false, error: "Invalid community ID." },
+        400
+      );
+    }
+
     return redirectTo(request, "/communities?member_error=join_failed");
   }
 
@@ -29,48 +63,98 @@ export async function POST(request: NextRequest, context: RouteContext) {
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    const nextPath = `/communities`;
+    if (returnJson) {
+      return jsonResult(
+        { success: false, error: "Please sign in to join this community." },
+        401
+      );
+    }
+
     return redirectTo(
       request,
-      `/login?next=${encodeURIComponent(nextPath)}`
+      `/login?next=${encodeURIComponent("/communities")}`
     );
   }
 
-  const { data: community, error: communityError } = await supabase
+  // Used only for the native HTML form response. The RPC remains responsible
+  // for validating community availability and membership permissions.
+  const { data: community } = await supabase
     .from("communities")
-    .select("id, slug, status")
-    .eq("id", id)
+    .select("slug")
+    .eq("id", communityId)
     .maybeSingle();
 
-  if (communityError || !community || community.status !== "active") {
-    console.error(
-      "Community join lookup failed:",
-      communityError?.message ?? "Community missing or inactive"
-    );
-    return redirectTo(request, "/communities?member_error=join_failed");
-  }
-
-  const destination = `/communities/${community.slug}`;
-  const { data: result, error: joinError } = await supabase.rpc(
+  const { data: membershipStatus, error: joinError } = await supabase.rpc(
     "submit_community_join_request",
-    { p_community_id: id }
+    { p_community_id: communityId }
   );
 
   if (joinError) {
-    console.error("Community join failed:", joinError.message);
-    return redirectTo(
-      request,
-      `${destination}?member_error=join_failed`
+    console.error(
+      "Community join request failed:",
+      joinError.message
     );
+
+    if (returnJson) {
+      return jsonResult(
+        {
+          success: false,
+          error: "Unable to join this community. Please try again.",
+        },
+        400
+      );
+    }
+
+    const fallbackPath = community?.slug
+      ? `/communities/${encodeURIComponent(community.slug)}?member_error=join_failed`
+      : "/communities?member_error=join_failed";
+
+    return redirectTo(request, fallbackPath);
   }
 
-  if (result !== "active" && result !== "pending") {
-    console.error("Unexpected community join result:", result);
-    return redirectTo(
-      request,
-      `${destination}?member_error=join_failed`
+  if (membershipStatus !== "pending" && membershipStatus !== "active") {
+    console.error(
+      "Community join RPC returned an unexpected status:",
+      membershipStatus
     );
+
+    if (returnJson) {
+      return jsonResult(
+        {
+          success: false,
+          error: "The community membership status could not be confirmed.",
+        },
+        500
+      );
+    }
+
+    const fallbackPath = community?.slug
+      ? `/communities/${encodeURIComponent(community.slug)}?member_error=join_failed`
+      : "/communities?member_error=join_failed";
+
+    return redirectTo(request, fallbackPath);
   }
 
-  return redirectTo(request, destination);
+  const message =
+    membershipStatus === "pending"
+      ? "Your request to join this community has been submitted."
+      : "You have joined this community.";
+
+  // The communities listing uses fetch() and expects JSON. Returning a 303
+  // redirect to fetch() causes it to receive HTML, so response.json() throws
+  // even though the database transaction has already succeeded. Return JSON
+  // for fetch requests and redirect only for the page's native HTML form.
+  if (returnJson) {
+    return jsonResult({
+      success: true,
+      status: membershipStatus,
+      message,
+    });
+  }
+
+  const successPath = community?.slug
+    ? `/communities/${encodeURIComponent(community.slug)}`
+    : "/communities";
+
+  return redirectTo(request, successPath);
 }
