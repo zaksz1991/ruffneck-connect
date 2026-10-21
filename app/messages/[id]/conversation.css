@@ -1,0 +1,365 @@
+.rn-chat-page {
+  min-height: 100vh;
+  padding: 32px 16px;
+}
+
+.rn-chat-shell {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 18px 55px rgba(15, 23, 42, 0.08);
+}
+
+.rn-chat-header {
+  padding: 28px;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.rn-chat-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.rn-chat-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.rn-chat-back-link:hover {
+  color: #0284c7;
+}
+
+.rn-chat-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rn-chat-type-direct {
+  color: #075985;
+  background: #e0f2fe;
+}
+
+.rn-chat-type-intent {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.rn-chat-identity {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.rn-chat-avatar {
+  position: relative;
+  display: flex;
+  flex: 0 0 68px;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  overflow: hidden;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0b1e3a, #0284c7);
+  color: #ffffff;
+  font-size: 25px;
+  font-weight: 800;
+  box-shadow: 0 4px 15px rgba(2, 132, 199, 0.2);
+}
+
+.rn-chat-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rn-chat-avatar-indicator {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.rn-chat-identity-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.rn-chat-eyebrow {
+  margin: 0 0 6px;
+  color: #0284c7;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.rn-chat-identity-copy h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-size: clamp(22px, 4vw, 32px);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.rn-chat-subtitle {
+  max-width: 650px;
+  margin: 9px 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.rn-chat-participant-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 13px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.rn-chat-secure-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.rn-chat-meta-separator {
+  color: #cbd5e1;
+}
+
+.rn-chat-profile-action {
+  flex-shrink: 0;
+}
+
+.rn-chat-profile-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 15px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.rn-chat-profile-link:hover {
+  border-color: #0284c7;
+  background: #f0f9ff;
+}
+
+.rn-chat-security-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 25px;
+  padding: 12px 14px;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  background: rgba(224, 242, 254, 0.65);
+}
+
+.rn-chat-security-icon {
+  flex-shrink: 0;
+  color: #0284c7;
+  font-size: 18px;
+}
+
+.rn-chat-security-note p {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rn-chat-conversation-area {
+  padding: 28px;
+  background: #ffffff;
+}
+
+.rn-chat-conversation-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.rn-chat-conversation-label > span:first-child {
+  flex-shrink: 0;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.rn-chat-conversation-line {
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+
+.rn-chat-conversation-caption {
+  flex-shrink: 0;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.rn-chat-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 28px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.rn-chat-footer-symbol {
+  display: flex;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.rn-chat-footer p {
+  flex: 1;
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rn-chat-footer p span {
+  color: #64748b;
+}
+
+.rn-chat-footer-link {
+  flex-shrink: 0;
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.rn-chat-footer-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .rn-chat-page {
+    padding: 12px 8px;
+  }
+
+  .rn-chat-shell {
+    border-radius: 16px;
+  }
+
+  .rn-chat-header {
+    padding: 20px 16px;
+  }
+
+  .rn-chat-header-top {
+    margin-bottom: 22px;
+  }
+
+  .rn-chat-identity {
+    align-items: flex-start;
+    gap: 13px;
+  }
+
+  .rn-chat-avatar {
+    flex-basis: 52px;
+    width: 52px;
+    height: 52px;
+    font-size: 20px;
+  }
+
+  .rn-chat-avatar-indicator {
+    width: 10px;
+    height: 10px;
+  }
+
+  .rn-chat-identity-copy h1 {
+    font-size: 22px;
+  }
+
+  .rn-chat-subtitle {
+    font-size: 12px;
+  }
+
+  .rn-chat-profile-action {
+    display: none;
+  }
+
+  .rn-chat-security-note {
+    margin-top: 20px;
+  }
+
+  .rn-chat-conversation-area {
+    padding: 22px 12px;
+  }
+
+  .rn-chat-conversation-label {
+    gap: 8px;
+  }
+
+  .rn-chat-conversation-caption {
+    font-size: 10px;
+  }
+
+  .rn-chat-footer {
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+
+  .rn-chat-footer p {
+    min-width: calc(100% - 60px);
+  }
+
+  .rn-chat-footer-link {
+    margin-left: 46px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rn-chat-profile-link {
+    transition: none;
+  }
+}

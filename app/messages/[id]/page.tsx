@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConversationMessages from "@/components/ConversationMessages";
 import ConversationReadStatus from "@/components/ConversationReadStatus";
+import "./conversation.css";
 
 export const dynamic = "force-dynamic";
 
