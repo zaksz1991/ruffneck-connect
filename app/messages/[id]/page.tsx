@@ -382,7 +382,7 @@ export default async function ConversationPage({
         />
       </section>
 
-      <style jsx global>{`
+      <style>{`
         .rn-chat-page {
           --rn-chat-navy: #0b1e3a;
           --rn-chat-blue: #087fba;
