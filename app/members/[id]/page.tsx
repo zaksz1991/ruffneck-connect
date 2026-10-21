@@ -392,7 +392,7 @@ export default async function MemberProfilePage({ params }: PageProps) {
         </div>
       </main>
 
-      <style jsx global>{`
+      <style>{`
         .rn-public-profile {
           --rn-profile-navy: #0b1e3a;
           --rn-profile-cyan: #00b4d8;
