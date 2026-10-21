@@ -1253,7 +1253,7 @@ export default async function CommunityDetailsPage({
         </footer>
       </div>
 
-      <style jsx global>{`
+      <style>{`
         .rn-community-page {
           --rn-navy: #0b1e3a;
           --rn-navy-soft: #132d50;
